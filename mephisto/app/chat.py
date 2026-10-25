@@ -276,6 +276,8 @@ def _guess_media_type(filename: str) -> str | None:
 
 
 def _message_event(row: MessageRow) -> dict[str, Any]:
+    # client_msg_id 必须带上：客户端靠它把"排队中"的本地条目与这条对上号，
+    # 否则发出去的那条会一直挂在发件箱里（真机上就是这么发现的）。
     return {
         "id": row.id,
         "seq": row.seq,
@@ -283,5 +285,6 @@ def _message_event(row: MessageRow) -> dict[str, Any]:
         "direction": row.direction,
         "channel": row.channel,
         "text": row.text,
+        "client_msg_id": row.client_msg_id,
         "created_at": row.created_at.isoformat(),
     }
