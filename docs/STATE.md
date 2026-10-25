@@ -19,7 +19,7 @@
 | S7 | 安卓工具链 + 空壳 APK（**在 Mephisto-Android 仓库**） | ✅ | `step-7`（Android 仓库） |
 | S8 | 安卓只读：会话列表 + 历史消息（Android 仓库） | ✅ | `step-8`（Android 仓库） |
 | S9 | 安卓发送：排队 + 三级撤销 + SSE（Android 仓库） | ✅ | `step-9`（Android 仓库） |
-| S10 | 安卓常驻通知 + 精确闹钟 + 日历（Android 仓库） | ⏳ 下一步 | — | |
+| S10 | 安卓常驻通知 + 精确闹钟（Android 仓库） | ✅ | `step-10`（Android 仓库） | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
 | S14 | 邮件 | 搁置 | |
 
@@ -142,6 +142,20 @@
 - 排队中取消：返回 `queued`，job 状态 `cancelled`，重复取消返回 409 `too_late`。
 - 客户端：`Outbox` / `SseParser` / `Backoff` / `ProgressTracker` 全是纯 JVM，
   **53 个单测**（后悔期、编辑换 id、排队深度 5、SSE 多行 data、心跳注释、退避封顶、状态行文案）。
+
+## 5.7 闹钟与常驻（S10 实测）
+
+- 服务端 
+otice → ReminderPlan → FUTURE（排闹钟）/ OVERDUE（立刻弹，宽限 2h）/ SKIP（过期太久，
+  服务端已汇总成"你错过了 N 条"）。
+- equestCode 由 
+otice.id 经 FNV-1a 派生：**重排是覆盖不是叠加**，取消能真的取消掉。
+  2000 个 ULID 实测零碰撞。
+- setAlarmClock 需要精确闹钟权限；没有就退 setWindow（10 分钟窗口），并在界面上提示去开。
+- 开机/时区变更/时间被改/App 更新 → RescheduleReceiver 重排（AlarmManager 的闹钟**不跨重启**）。
+- 常驻服务用 emoteMessaging（无 6 小时上限）+ IMPORTANCE_LOW 通知渠道（无声）。
+- **三个必须手动开的开关**：通知权限、精确闹钟、电池优化。做成「提醒与权限」页，少开任何一个都没有报错。
+- **验不了的**（要真机）：到点响不响、重启后闹钟回不回来、常驻会不会被杀。
 
 ## 6. 本机已验证的验收命令
 

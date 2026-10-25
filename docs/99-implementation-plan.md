@@ -771,6 +771,9 @@ E:\study\mephisto\
 | 产出 | `KeepAliveService`（`remoteMessaging` 前台服务 + 常驻 SSE + 重连退避 + `START_STICKY`）、`Alarms.kt`（`setAlarmClock`，`requestCode` 由 `notice.id` 派生 → 天然幂等）、`AlarmReceiver`、`RescheduleReceiver`（开机/时区/时间变更/拉起常驻）、`WatchdogReceiver`（L2 巡检）、`Notifier`（渠道）、**权限与保活引导页**（含 L0/L1/L2 开关）、`SyncWorker` |
 | 关键决策 | 默认 **L1 常驻**；未来 notice → 精准闹钟；已过期未 ack → 立即通知；`canScheduleExactAlarms()` 为 false → 引导 + 降级 `setWindow`；日历用 `ACTION_INSERT`（零权限）；常驻通知渠道 `IMPORTANCE_LOW`（无声不弹） |
 | 验收（本节最关键） | ① 建一条 5 分钟后的提醒，**电脑关机 + 手机飞行模式**，仍准时响；② 重启手机后闹钟仍在、常驻自动恢复；③ 改系统时区，时间正确；④ 点"加入日历"进系统日历并带提前提醒；⑤ 删掉闹钟后服务端不重设；⑥ 过期的提醒变成"你错过了"；⑦ **锁屏 2 小时后**在电脑上触发任务完成，通知**秒级**到；⑧ 手动划掉 App 后开 L2，看门狗在 15 分钟内把它拉回来 |
+| 实测结果 | **76 个 JVM 单测全绿**（排程、requestCode 幂等、过期归档、保活决策、广播判定）；APK 28.43 MB；`aapt2` 确认 7 个权限与 service/receiver 都在（`foregroundServiceType=0x200` 即 `remoteMessaging`） |
+| 与计划的偏差 | **日历没做**（`ACTION_INSERT`）：它是"可选增强"，不影响提醒到点响；`SyncWorker` 也没做——SSE 常驻已经覆盖实时性，WorkManager 留到真机上发现漏消息再加 |
+| 未完成（要真机） | 到点响不响、重启后闹钟回不回来、常驻会不会被系统杀、权限引导页的实际流程 |
 | tag | `step-10` |
 
 **阶段 B 结束时**：手机就是你的日常入口。成功标准 1–4 全部达成。
