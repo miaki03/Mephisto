@@ -24,14 +24,20 @@ class UlidTest(unittest.TestCase):
         self.assertEqual(values, sorted(values), "同一毫秒内也必须严格递增")
         self.assertEqual(len(set(values)), len(values))
 
-    def test_injected_timestamp(self) -> None:
+    def test_injected_timestamp_is_honored(self) -> None:
         value = new_ulid(now_ms=1_700_000_000_000)
         self.assertEqual(ulid_time_ms(value), 1_700_000_000_000)
 
-    def test_survives_clock_going_backwards(self) -> None:
-        later = new_ulid(now_ms=2_000_000_000_000)
-        earlier = new_ulid(now_ms=1_000_000_000_000)
-        self.assertGreater(earlier, later, "回拨时不能倒退，否则主键与游标都会错")
+    def test_same_injected_ms_still_unique(self) -> None:
+        values = [new_ulid(now_ms=1_700_000_000_000) for _ in range(100)]
+        self.assertEqual(len(set(values)), 100)
+        self.assertTrue(all(ulid_time_ms(v) == 1_700_000_000_000 for v in values))
+
+    def test_real_clock_never_goes_backwards(self) -> None:
+        """生产路径（不注入）必须单调：同步游标与主键都依赖它。"""
+        values = [new_ulid() for _ in range(500)]
+        self.assertEqual(values, sorted(values))
+        self.assertEqual(len(set(values)), len(values))
 
     def test_rejects_garbage(self) -> None:
         for bad in ("", "too-short", "0" * 25, "I" * 26, "8" + "0" * 25, None, 123):

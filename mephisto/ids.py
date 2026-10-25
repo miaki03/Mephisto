@@ -34,15 +34,28 @@ def _encode(value: int, length: int) -> str:
 
 
 def new_ulid(now_ms: int | None = None) -> str:
-    """生成 ULID。传入 now_ms 时用它作为时间戳（测试可注入）。"""
+    """生成 ULID。两条语义，别混：
+
+    - `now_ms is None`（生产路径）：读真实时钟，并做**单调保护**——同一毫秒内自增随机段，
+      真实时钟回拨时沿用上一次的时间戳，保证永不倒退（主键与同步游标都靠它）。
+    - `now_ms` 给了值（测试/回放路径）：**以注入值为准**，同毫秒内自增随机段。
+      注入等于"假装时钟是这个值"，此时不做跨调用的单调保护——否则注入就没意义了。
+    """
     global _last_ms, _last_rand
-    ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    injected = now_ms is not None
+    ms = int(now_ms) if injected else int(time.time() * 1000)
     with _lock:
-        if ms > _last_ms:
+        if injected:
+            if ms == _last_ms:
+                _last_rand += 1
+            else:
+                _last_ms = ms
+                _last_rand = secrets.randbits(80)
+        elif ms > _last_ms:
             _last_ms = ms
             _last_rand = secrets.randbits(80)
         else:
-            # 时间没前进（同毫秒或时钟回拨）：沿用上次时间戳并自增随机段
+            # 真实时钟没前进或回拨：沿用上次时间戳，只动随机段
             ms = _last_ms
             _last_rand += 1
             if _last_rand >= 1 << 80:
@@ -81,3 +94,21 @@ def hash_token(token: str) -> str:
 
 def verify_token(token: str, expected_hash: str) -> bool:
     return hmac.compare_digest(hash_token(token), expected_hash)
+
+
+CLIENT_MSG_ID_MAX = 64
+
+
+def is_client_msg_id(value: object) -> bool:
+    """客户端幂等键：1–64 个可打印 ASCII，不含空白。
+
+    为什么限制字符集：它会进 URL、日志、SQL 参数，放开等于给自己埋注入面。
+    """
+    if not isinstance(value, str) or not 1 <= len(value) <= CLIENT_MSG_ID_MAX:
+        return False
+    return all(33 <= ord(ch) <= 126 for ch in value)
+
+
+def new_client_msg_id() -> str:
+    """给客户端一个默认值；真正的幂等键应由客户端生成，并在弱网重试时复用。"""
+    return f"c_{secrets.token_urlsafe(12)}"

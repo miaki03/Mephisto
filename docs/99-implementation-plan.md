@@ -604,7 +604,7 @@ E:\study\mephisto\
 
 | 规则 | 为什么 |
 |---|---|
-| Python 单文件 ≤ 200 行；Kotlin 单文件 ≤ 300 行 | 超了就是职责没分好 |
+| Python 单文件 ~200 行、Kotlin ~300 行是**提醒，不是禁令** | 超了先问"职责是不是混了"；**绝不为了行数硬拆**。`domain/envelope.py` 312 行是合理的——它装的是"一条消息 + 关于它的两个判断"，硬拆成三个文件只会让读者多点两次跳转。拆分要由职责驱动，不是由行数驱动 |
 | `domain/` 不 import 任何 IO | 业务判断可纯单测，不需要假数据库 |
 | 副作用只在三处：`Store` / `Source`+`Sink` / `Runner` | 其余全是纯函数 |
 | 端口用 `typing.Protocol`，不用基类继承 | 适配器只"翻译"，不写业务分支 |
@@ -656,9 +656,11 @@ E:\study\mephisto\
 
 | 项 | 内容 |
 |---|---|
-| 产出 | `domain/envelope.py`（`Envelope`/`Address`/`Attachment`）、`domain/session.py`（`Session`/`SessionKind`）、`domain/notice.py`（`Notice`/`NoticeKind`/状态机）、JSON 编解码；`ids.py` 的 ULID/`client_msg_id` 校验 |
-| 关键决策 | `Envelope` 不可变（`frozen=True`）；时间一律 UTC 存、展示层再转换；`sender` 字段名避开 `from` 关键字；**`Envelope` 保留 `message_id`/`in_reply_to`/`refs` 三个可空字段**，邮件回来时不用改模型 |
-| 验收 | 单测：编解码往返、ULID 单调、notice 状态机非法跃迁报错 |
+| 产出 | `domain/codec.py`（严格解码：未知键报错、错误带路径）、`domain/values.py`（`Address`/`Attachment`/`ThreadRef`/`Delivery`/`E2EE`）、`domain/envelope.py`（`Envelope`/`Auth`/`Route`/`normalize_subject`）、`domain/session.py`、`domain/notice.py`（含状态机）、`ids.py` 增加 `client_msg_id` 校验 |
+| 关键决策 | `Envelope` 不可变（`frozen=True`）；时间一律 UTC 感知，naive 直接拒绝；字段名 `sender` 避开 `from` 关键字；`thread` 三字段可空（HTTP 信道没有邮件头）；**`null` 表示"未知"而不是"没有"**（`delivery.seen_at`、`e2ee`、`auth.*`） |
+| 验收 | 单测：编解码往返、未知键/超界/坏枚举报错、notice 状态机非法跃迁报错、契约键集合与 `contracts/envelope.schema.json` 一致 |
+| 实测结果 | **82 个用例全绿**（unittest 与 pytest 双跑）；domain 层零 IO 依赖；`serve/run/db` 仍返回 2 |
+| 自我纠正 | 初次为了让 `envelope.py` 不超 200 行，把 `Auth`/`Route`/`normalize_subject` 硬拆成两个文件——是规则驱动而非职责驱动，已合回。规则同时改成"提醒不是禁令"（§9.2） |
 | tag | `step-1` |
 
 #### 第 2 步 · 存储与迁移（1.5 天）
