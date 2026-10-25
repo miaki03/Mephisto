@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mephisto 调试页</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font: 14px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 16px; background: #14161a; color: #d7dce2; }
+  h1 { font-size: 16px; margin: 0 0 12px; font-weight: 600; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  input, button, textarea, select { font: inherit; background: #1d2026; color: inherit; border: 1px solid #2c313a; border-radius: 6px; padding: 6px 8px; }
+  input { flex: 1 1 180px; }
+  button { cursor: pointer; }
+  button:hover { background: #262b33; }
+  .cols { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .col { flex: 1 1 320px; min-width: 280px; }
+  .panel { border: 1px solid #2c313a; border-radius: 8px; padding: 10px; background: #171a1f; }
+  .item { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  .item:hover { background: #22272f; }
+  .item.active { background: #24313f; }
+  .msg { padding: 6px 8px; border-radius: 6px; margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+  .in { background: #22303f; }
+  .out { background: #1f2a22; }
+  #log { font: 12px/1.4 ui-monospace, Consolas, monospace; max-height: 220px; overflow: auto; color: #8b96a3; }
+  .muted { color: #7c8794; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Mephisto 调试页 <span class="muted">（不是产品界面，只是 API 的手动验收入口）</span></h1>
+
+<div class="row">
+  <input id="base" placeholder="服务地址，如 https://mephisto.example.com" style="flex:2 1 320px">
+  <input id="token" placeholder="Bearer 令牌" style="flex:2 1 320px">
+  <button id="save">保存</button>
+  <button id="health">体检</button>
+</div>
+
+<div class="cols">
+  <div class="col panel">
+    <div class="row">
+      <input id="title" placeholder="新会话标题">
+      <button id="create">新建</button>
+      <button id="refresh">刷新</button>
+    </div>
+    <div id="sessions" class="muted">还没有会话</div>
+  </div>
+
+  <div class="col panel">
+    <div id="messages" class="muted">选一个会话</div>
+    <div class="row" style="margin-top:8px">
+      <textarea id="text" rows="2" placeholder="发一条消息" style="flex:1 1 100%"></textarea>
+    </div>
+    <div class="row">
+      <button id="send">发送</button>
+      <button id="sse">连接事件流</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:16px">
+  <div class="muted" style="margin-bottom:6px">事件日志</div>
+  <div id="log"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let currentSession = null;
+
+function base() { return ($('base').value || location.origin).replace(/\/$/, ''); }
+function token() { return $('token').value.trim(); }
+function log(line) {
+  const el = $('log');
+  el.textContent += line + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function api(path, options = {}) {
+  const headers = Object.assign({ 'Authorization': 'Bearer ' + token() }, options.headers || {});
+  if (options.body && typeof options.body !== 'string') {
+    headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(options.body);
+  }
+  const res = await fetch(base() + path, Object.assign({}, options, { headers }));
+  const text = await res.text();
+  let data = text;
+  try { data = JSON.parse(text); } catch (e) { /* 保留原文 */ }
+  if (!res.ok) throw new Error(res.status + ' ' + (data.error ? data.error.message : text));
+  return data;
+}
+
+function renderSessions(items) {
+  const box = $('sessions');
+  box.className = '';
+  box.innerHTML = '';
+  if (!items.length) { box.className = 'muted'; box.textContent = '还没有会话'; return; }
+  for (const item of items) {
+    const div = document.createElement('div');
+    div.className = 'item' + (currentSession && currentSession.id === item.id ? ' active' : '');
+    div.textContent = item.title + '  · ' + item.kind;
+    div.onclick = () => openSession(item);
+    box.appendChild(div);
+  }
+}
+
+async function refreshSessions() {
+  try {
+    const data = await api('/api/v1/sessions?limit=50');
+    renderSessions(data.items);
+  } catch (err) { log('刷新会话失败: ' + err.message); }
+}
+
+async function openSession(session) {
+  currentSession = session;
+  $('messages').className = '';
+  $('messages').innerHTML = '';
+  try {
+    const data = await api('/api/v1/sessions/' + session.id + '/messages?limit=100');
+    if (!data.items.length) { $('messages').className = 'muted'; $('messages').textContent = '（空会话）'; }
+    for (const msg of data.items) addMessage(msg);
+  } catch (err) { log('打开会话失败: ' + err.message); }
+}
+
+function addMessage(msg) {
+  const box = $('messages');
+  if (box.classList.contains('muted')) { box.className = ''; box.innerHTML = ''; }
+  const div = document.createElement('div');
+  div.className = 'msg ' + (msg.direction === 'in' ? 'in' : 'out');
+  div.textContent = (msg.direction === 'in' ? '我: ' : 'Agent: ') + msg.text;
+  box.appendChild(div);
+}
+
+$('save').onclick = () => {
+  localStorage.setItem('mephisto.base', $('base').value);
+  localStorage.setItem('mephisto.token', $('token').value);
+  log('已保存到 localStorage');
+};
+
+$('health').onclick = async () => {
+  try { log('healthz: ' + JSON.stringify(await api('/healthz'))); }
+  catch (err) { log('体检失败: ' + err.message); }
+};
+
+$('refresh').onclick = refreshSessions;
+
+$('create').onclick = async () => {
+  const title = $('title').value.trim() || '新会话';
+  try {
+    const data = await api('/api/v1/sessions', { method: 'POST', body: { title } });
+    $('title').value = '';
+    await refreshSessions();
+    openSession(data.session);
+  } catch (err) { log('新建失败: ' + err.message); }
+};
+
+$('send').onclick = async () => {
+  if (!currentSession) { log('先选一个会话'); return; }
+  const text = $('text').value.trim();
+  if (!text) return;
+  $('text').value = '';
+  try {
+    const data = await api('/api/v1/sessions/' + currentSession.id + '/messages', {
+      method: 'POST',
+      body: { text, client_msg_id: 'web-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) },
+    });
+    addMessage(data.message);
+    if (data.reply) addMessage(data.reply);
+    log('后台: ok=' + (data.run ? data.run.ok : 'n/a') + ' 耗时=' + (data.run ? data.run.duration_ms : 0) + 'ms');
+  } catch (err) { log('发送失败: ' + err.message); }
+};
+
+$('sse').onclick = () => {
+  const url = base() + '/api/v1/events?since_seq=0';
+  log('连接 ' + url);
+  const src = new EventSource(url + '&token=' + encodeURIComponent(token()));
+  for (const kind of ['message', 'job', 'notice']) {
+    src.addEventListener(kind, (event) => log('[' + kind + '] ' + event.data));
+  }
+  src.onerror = () => log('事件流错误（EventSource 不能带 Authorization 头，仅作观察用）');
+};
+
+$('base').value = localStorage.getItem('mephisto.base') || location.origin;
+$('token').value = localStorage.getItem('mephisto.token') || '';
+log('就绪。先填令牌，再点"体检"。');
+</script>
+</body>
+</html>

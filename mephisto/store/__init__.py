@@ -16,9 +16,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from .db import Database, from_ms, to_ms
+from .devices import DeviceInfo, DeviceRepo
 from .events import EventRepo, EventRow
 from .messages import AttachmentRepo, MessageRepo, MessageRow
+from .notices import NoticeRepo
 from .sessions import SessionRepo
+from .uploads import UploadRepo, UploadRow
 
 DB_FILENAME = "mephisto.db"
 
@@ -28,6 +31,8 @@ def open_db(data_dir: Path | str) -> Database:
 
 
 __all__ = [
+    "DeviceInfo",
+    "DeviceRepo",
     "AttachmentRepo",
     "DB_FILENAME",
     "Database",
@@ -35,7 +40,10 @@ __all__ = [
     "EventRow",
     "MessageRepo",
     "MessageRow",
+    "NoticeRepo",
     "SessionRepo",
+    "UploadRepo",
+    "UploadRow",
     "from_ms",
     "open_db",
     "to_ms",

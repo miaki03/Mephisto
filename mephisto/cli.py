@@ -111,8 +111,56 @@ def build_parser() -> argparse.ArgumentParser:
     db = sub.add_parser("db", help="数据库维护")
     db.add_argument("action", nargs="?", default="check", choices=("migrate", "check"), help="migrate 建表/升级；check 体检")
 
+    device = sub.add_parser("device", help="设备与令牌")
+    device_sub = device.add_subparsers(dest="action", required=True)
+    device_add = device_sub.add_parser("add", help="发一个新令牌（只显示一次）")
+    device_add.add_argument("--name", required=True)
+    device_add.add_argument("--kind", default="android", choices=("android", "desktop", "mail", "system"))
+    device_sub.add_parser("list", help="列设备")
+    device_revoke = device_sub.add_parser("revoke", help="吊销设备")
+    device_revoke.add_argument("device_id")
+
     sub.add_parser("version", help="打印版本")
     return parser
+
+
+def cmd_serve(cfg: Config, *, host: str | None, port: int | None) -> int:
+    from .adapters.http import serve
+
+    return serve(cfg, host=host, port=port)
+
+
+def cmd_device(cfg: Config, action: str, args: argparse.Namespace) -> int:
+    from .store import open_db
+    from .store.devices import DeviceRepo
+
+    db = open_db(cfg.data_dir)
+    db.migrate()
+    try:
+        devices = DeviceRepo(db)
+        now = SystemClock().now()
+        if action == "add":
+            info, token = devices.add(args.name, at=now, kind=args.kind)
+            print(f"设备 {info.name}（{info.kind}）已创建，id={info.id}")
+            print("令牌（只显示这一次，丢了就吊销重发）：")
+            print(token)
+            return 0
+        if action == "list":
+            items = devices.list()
+            if not items:
+                print("还没有设备")
+                return 0
+            for item in items:
+                flag = "有效" if item.active else "已吊销"
+                print(f"{item.id}  {flag}  {item.kind:<8} {item.name}")
+            return 0
+        if action == "revoke":
+            ok = devices.revoke(args.device_id, at=now)
+            print("已吊销" if ok else "没有这个设备，或已经吊销过")
+            return 0 if ok else 1
+        return 2
+    finally:
+        db.close()
 
 
 def cmd_db(cfg: Config, action: str) -> int:
@@ -220,10 +268,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_doctor(cfg)
     if args.command == "db":
         return cmd_db(cfg, args.action)
+    if args.command == "device":
+        return cmd_device(cfg, args.action, args)
     if args.command == "run":
         return cmd_run(cfg, text=args.text, dry_run=args.dry_run, verbose=args.verbose)
     if args.command == "serve":
-        return _not_yet("serve", "4")
+        return cmd_serve(cfg, host=args.host, port=args.port)
     return _not_yet(str(args.command), "?")
 
 

@@ -13,8 +13,8 @@
 | S1 | 领域模型 | ✅ | `step-1` |
 | S2 | 存储与迁移（13 表） | ✅ | `step-2` |
 | S3 | 运行器（DSH 子进程） | ✅ | `step-3` |
-| S4 | HTTP API + SSE | ⏳ 下一步 | — |
-| S5 | 队列与守护进程 | | |
+| S4 | HTTP API + SSE（16 端点，契约冻结） | ✅ | `step-4` |
+| S5 | 队列与守护进程 | ⏳ 下一步 | — |
 | S6 | 提醒内核 + MCP 工具 | | |
 | S7–S10 | 安卓（工具链/只读/发送/闹钟） | | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
@@ -70,6 +70,23 @@
 - 客户端取消 = 杀进程（SDK 协议没有 cancel 方法）。
 - `DSH_HOME` 必须非空且不使用 `~/.dsh` 默认；本机 profile 目录现有 `mailbot`、`web`。
 
+## 5.1 HTTP 契约（S4 冻结，之后只加不改）
+
+- 鉴权：`Authorization: Bearer <token>`；`/healthz` 与 `/` 免鉴权。
+- 16 个端点：healthz / sessions(3) / messages(3) / events(SSE) / notices(2) / attachments(5) / devices(1)。
+- 游标：`since_seq`（单调整数）；SSE 支持 `Last-Event-ID`，每 15 秒一个 `: ping`。
+- 响应体形状：`{items:[...]}`、`{session:{...}}`、`{message:{...}, reply:{...}, run:{...}}`、
+  错误 `{error:{code,message}}`。
+- **失败映射**：400 参数/校验、401 未授权、404 不存在、405 方法不对、409 状态非法/分片不全、
+  413 过大、502 运行器失败、500 内部错误。
+- 附件：`attachment_id` 就是 `sha256:<hex>`（内容寻址，天然去重）。
+
+## 5.2 实测事实（S4）
+
+- 端到端 2.2s：建会话 → 发消息 → 真 dsh → 回复 `1 + 1 = **2**`；`tokens=6059 cacheRead=5504`。
+- 中文往返无损（用 python 发，PowerShell 的 `ConvertTo-Json` 会把中文变成 `?`——那是客户端问题）。
+- **浏览器的 EventSource 不能带 Bearer 头**，所以调试页的 SSE 按钮改成打印 curl 命令；真客户端（OkHttp）可以带头。
+
 ## 6. 本机已验证的验收命令
 
 ```powershell
@@ -79,6 +96,8 @@ python -m pytest -q            # pytest，同一批用例
 python -m mephisto doctor      # 8 项体检
 python -m mephisto db migrate  # 迁移到最新
 python -m mephisto db check    # 完整性 + 行数
+python -m mephisto serve        # 起服务（默认 127.0.0.1:8787）
+python -m mephisto device add --name 手机   # 发令牌
 git push -u origin main --tags # 推代码与标签
 ```
 

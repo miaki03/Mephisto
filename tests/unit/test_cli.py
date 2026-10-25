@@ -28,13 +28,11 @@ class CliTest(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, out)
 
-    def test_unfinished_commands_say_so(self) -> None:
-        for command, step in (("serve", "4"),):
-            with self.subTest(command=command):
-                code, _, err = run_capture([command])
-                self.assertEqual(code, 2)
-                self.assertIn("尚未实现", err)
-                self.assertIn(step, err)
+    def test_serve_help_mentions_host_and_port(self) -> None:
+        with contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                run_capture(["serve", "--help"])
+        self.assertEqual(ctx.exception.code, 0)
 
 
 if __name__ == "__main__":

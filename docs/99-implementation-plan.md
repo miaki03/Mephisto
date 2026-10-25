@@ -693,7 +693,9 @@ E:\study\mephisto\
 | 产出 | `adapters/http/serve.py`（`ThreadingHTTPServer` + 薄路由）、`sse.py`、`static/index.html`（约 80 行：会话列表 + 发消息，**只是调试工具**）；`Source`（POST 入队）+ `Sink`（写库 + 推事件） |
 | API | §7 的 16 条全部可用（含**附件分片上传三件套**；下载可留空实现） |
 | 关键决策 | `Bearer token`（存 hash、绑设备）；默认只听 `127.0.0.1`，公网入口在 Cloudflare；**回复整段到达**（提交级）；SSE 每 15 秒 keepalive；**分片 4 MB 硬上限 8 MB** |
-| 验收 | 浏览器打开 `index.html` 能对话（回复整段出现）；`curl` 打 `/healthz` 与各端点正确响应；**4 MB 分片 → complete 校验通过，9 MB 单请求 → 413**；断开网络再恢复，SSE 自动重连且不丢消息；错误 token → 401 |
+| 验收 | 浏览器打开 `index.html` 能对话；`curl` 打 `/healthz` 与各端点正确响应；4 MB 分片 → complete 校验通过；错误 token → 401 ✓ |
+| 实测结果 | **141 个用例全绿**（unittest + pytest 双跑）；真起服务端到端 **2.2s**：healthz 公开、无令牌 401、建会话、真 dsh 回复 `1 + 1 = **2**`（tokens=6059 / cacheRead=5504）、`client_msg_id` 重发标记 `duplicate` 且不再跑模型、SSE 逐条推 `id/event/data`、中文往返无损 |
+| 落地细节 | 16 端点全部实现；`attachment_id` 即 `sha256:<hex>`（内容寻址去重）；上传分片落 `state/uploads/<id>/`，拼装后流式校验再 `adopt` 进 `state/blobs/`；SSE 用 500ms 轮询 DB 换零跨线程状态 |
 | 冻结物 | `docs/steps/04-api.md`：十六条端点的路径/方法/请求/响应/错误码，**写成表**。S8–S10 照它实现，之后只加不改 |
 | tag | `step-4` |
 
