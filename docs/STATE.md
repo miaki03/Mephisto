@@ -16,7 +16,10 @@
 | S4 | HTTP API + SSE（16 端点，契约冻结） | ✅ | `step-4` |
 | S5 | 队列与守护进程 | ✅ | `step-5` |
 | S6 | 提醒内核 + MCP 工具 | ✅ | `step-6` | |
-| S7–S10 | 安卓（工具链/只读/发送/闹钟） | ⏳ 下一步（S7 起） | — | |
+| S7 | 安卓工具链 + 空壳 APK（**在 Mephisto-Android 仓库**） | ✅ | `step-7`（Android 仓库） |
+| S8 | 安卓只读：会话列表 + 历史消息（Android 仓库） | ✅ | `step-8`（Android 仓库） |
+| S9 | 安卓发送：排队 + 三级撤销 + SSE（Android 仓库） | ⏳ 下一步 | — |
+| S10 | 安卓常驻通知 + 精确闹钟 + 日历（Android 仓库） | | — | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
 | S14 | 邮件 | 搁置 | |
 
@@ -111,6 +114,22 @@
   `chatlog_search` / `chatlog_digest` 留到 S13（那时才有数据源，现在声明等于骗模型）。
 - CLI：`mephisto remind "3分钟后 喝水"`、`mephisto mcp`；`serve` 会同时起 worker 与调度器。
 
+## 5.5 安卓侧（S7–S8 实测）
+
+- **两个仓库**：服务端 `E:\study\mephisto`（S0–S6），安卓 `E:\study\Mephisto-Android`（S7 起）。
+  tag 名一致（step-N），但各指各仓库的提交。
+- 工具链全在 `E:\study\.toolchain`（不进仓库）：JDK 21.0.12.1、Gradle 9.8.2、AGP 9.4.1、
+  platforms android-36 + android-37.0、build-tools 36.0.0、platform-tools 37.0.1。
+- **AGP 9 起 Kotlin 内置**：再应用 `org.jetbrains.kotlin.android` 会直接报错；
+  只保留 `org.jetbrains.kotlin.plugin.compose`。
+- **三个环境坑**（都已绕开，写在 Android 仓库 README）：
+  1. `sdkmanager` / `android sdk` 连不上仓库 → `tools/install-sdk-packages.py` 直接下 Google 仓库 zip 并手工解压；
+  2. Maven Central TLS 握手被中断 → `settings.gradle.kts` 优先走阿里云镜像；
+  3. `%TEMP%` 与 `%LOCALAPPDATA%` 不可写 → `java.io.tmpdir`、Kotlin（`in-process`）、`adb` 全部改道。
+- 构建结果：APK 28.22 MB，`dev.mephisto.app` / minSdk 29 / targetSdk 37 / MainActivity 可启动。
+- **客户端逻辑放在 `core/`（纯 JVM）**，17 个 JVM 单测在 `gradlew test` 里跑，不需要手机。
+  其中 `RealPayloadTest` 用真服务端抓下来的四个响应当夹具。
+
 ## 6. 本机已验证的验收命令
 
 ```powershell
@@ -124,6 +143,11 @@ python -m mephisto serve        # 起服务（默认 127.0.0.1:8787）
 python -m mephisto device add --name 手机   # 发令牌
 python -m mephisto remind "3分钟后 喝水" # 建提醒
 python -m mephisto mcp                    # MCP stdio（给 dsh 当工具）
+
+# 安卓仓库（E:\study\Mephisto-Android）
+tools\build.ps1                           # 构建 debug APK
+tools\build.ps1 -Task testDebugUnitTest   # 17 个 JVM 单测
+tools\build.ps1 -Task installDebug -Install  # 装到手机（需先 adb devices 看到设备）
 git push -u origin main --tags # 推代码与标签
 ```
 

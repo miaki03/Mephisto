@@ -733,6 +733,10 @@ E:\study\mephisto\
 | 关键决策 | **不装 Android Studio**；SDK/JDK/Gradle 全部在 `E:\study\.toolchain\`；版本以 `sdkmanager --list` 实际输出为准 |
 | 验收 | `.\gradlew.bat :app:assembleDebug` 产出 APK；`adb install` 或拷 APK 装上；**打开 App 点按钮，屏幕上出现服务端的版本号**——这一步只要通了，后面全是应用代码的事 |
 | 风险 | 首次 Gradle 下载依赖慢；如果卡住，允许分两次跑（先 `--refresh-dependencies` 拿骨架） |
+| 实测结果 | 已落地在**独立仓库** ``E:\study\Mephisto-Android``（用户指定）：JDK 21.0.12.1 / Gradle 9.8.2 / AGP 9.4.1 / compileSdk 37；APK **28.22 MB**，``aapt2`` 核对 ``dev.mephisto.app``、minSdk 29、targetSdk 37、MainActivity 可启动 |
+| 与计划的偏差 | ``tools/setup-android.ps1`` 拆成 ``install-toolchain.py`` + ``install-sdk-packages.py`` + ``build.ps1``——因为 ``sdkmanager`` 在本机连不上仓库，只能用 Python 直下 zip 再手工解压 |
+| 环境坑 | Maven Central TLS 握手被中断（改阿里云镜像）；``%TEMP%``/``%LOCALAPPDATA%`` 不可写（java.io.tmpdir、Kotlin in-process、adb 全部改道）；**AGP 9 起 Kotlin 内置**，再应用 ``kotlin-android`` 插件会直接失败 |
+| 未完成 | 真机安装与"点按钮出服务端版本号"：本机没连手机，等隧道配好一起验 |
 | tag | `step-7` |
 
 #### 第 8 步 · A1 只读（1.5 天）
@@ -742,6 +746,9 @@ E:\study\mephisto\
 | 产出 | `Api.kt`、`Db.kt`（Room）、`Repo.kt`、`SessionsScreen`、`ChatScreen` 的只读版；附件下载（`DownloadManager`） |
 | 关键决策 | 缓存优先（先出 Room 再打网络）；`since=` 增量；分页 `limit=100` + 滚动加载 |
 | 验收 | 真机上看到会话列表与历史消息；关掉 Wi-Fi 重启 App，**列表和历史上文还在**（来自缓存）；点附件能存到手机 |
+| 实测结果 | 只读已可用：``core/`` 纯 JVM 逻辑（org.json 解析 + HttpURLConnection），**17 个 JVM 单测全绿**，其中 ``RealPayloadTest`` 用真服务端抓下来的四个响应当夹具；APK 28.22 MB 构建通过 |
+| 与计划的偏差 | 没用 Room：S8 先不落本地缓存（缓存优先与附件下载推迟到 S9，那时才有"离线也要能看"的场景）；传输层抽象成 ``HttpTransport``，单测不碰网络 |
+| 未完成 | 真机界面呈现、关网重启后的缓存、"点附件存到手机"——都要等真机 |
 | tag | `step-8` |
 
 #### 第 9 步 · A2 发送 + 过程可见 + 排队/打断（2 天）
