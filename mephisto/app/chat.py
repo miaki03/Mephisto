@@ -151,13 +151,14 @@ class ChatService:
             raise
 
         self._append_reply(job.session_id, result.text)
+        cancelled = result.error == "cancelled"
         self.jobs.finish(
             job.id,
-            "done" if result.ok else "failed",
+            "cancelled" if cancelled else ("done" if result.ok else "failed"),
             at=self.clock.now(),
             error=result.error,
         )
-        if not result.ok:
+        if not result.ok and not cancelled:
             self._system_notice(job, result.error or "未知错误")
         return result
 

@@ -16,7 +16,7 @@ from datetime import datetime
 
 from ..clock import Clock, SystemClock
 from ..store import Database
-from ..store.jobs import JobRepo
+from ..store.jobs import JobRepo, JobRow
 from .chat import ChatService
 
 DEFAULT_POLL_SECONDS = 1.0
@@ -40,6 +40,7 @@ class Daemon:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._current: JobRow | None = None
         self.processed = 0
         self.failed = 0
 
@@ -74,13 +75,37 @@ class Daemon:
         self.run_job(job)
         return True
 
-    def run_job(self, job) -> None:
+    def run_job(self, job: JobRow) -> None:
+        self._current = job
         try:
             self.service.execute_job(job)
             self.processed += 1
         except Exception:
             self.failed += 1
             traceback.print_exc(file=sys.stderr)
+        finally:
+            self._current = None
+
+    def cancel(self, job_id: str) -> str:
+        """排队中就删行；已经在跑就杀进程树。
+
+        返回 `queued` / `interrupted` / `too_late` / `not_found`——
+        调用方据此决定提示什么，而不是笼统地"操作失败"。
+        """
+        current = self._current
+        if current is not None and current.id == job_id:
+            # 运行中：杀掉子进程树，run() 会以 error=cancelled 收尾
+            cancel = getattr(self.service.runner, "cancel", None)
+            if cancel is None:
+                return "too_late"
+            cancel()
+            return "interrupted"
+        if self.jobs.cancel_queued(job_id, at=self.clock.now()):
+            return "queued"
+        job = self.jobs.get(job_id)
+        if job is None:
+            return "not_found"
+        return "too_late"
 
     def _loop(self) -> None:
         while not self._stop.is_set():

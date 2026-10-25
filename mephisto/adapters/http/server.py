@@ -175,13 +175,20 @@ def _bearer(header: str | None) -> str | None:
     return parts[1].strip() or None
 
 
-def build_api(config: Config, *, service: ChatService, async_jobs: bool = False) -> Api:
+def build_api(
+    config: Config,
+    *,
+    service: ChatService,
+    async_jobs: bool = False,
+    daemon: Any = None,
+) -> Api:
     return Api(
         service,
         blobs=BlobStore(config.data_dir / "blobs"),
         uploads=UploadArea(config.data_dir / "uploads"),
         version=__version__,
         async_jobs=async_jobs,
+        daemon=daemon,
     )
 
 
@@ -210,9 +217,10 @@ def build_server(
     host: str | None = None,
     port: int | None = None,
     async_jobs: bool = False,
+    daemon: Any = None,
 ) -> ThreadingHTTPServer:
     service = service or build_service(config)
-    api = build_api(config, service=service, async_jobs=async_jobs)
+    api = build_api(config, service=service, async_jobs=async_jobs, daemon=daemon)
     bound = type("BoundHandler", (Handler,), {"api": api})
     server = ThreadingHTTPServer(
         (host if host is not None else config.server.host, port if port is not None else config.server.port),
@@ -232,7 +240,9 @@ def serve(config: Config, *, host: str | None = None, port: int | None = None, a
     service = build_service(config)
     daemon = Daemon(service) if async_jobs else None
     scheduler = Scheduler(ReminderService(service.db, clock=service.clock, tz=config.timezone))
-    server = build_server(config, service=service, host=host, port=port, async_jobs=async_jobs)
+    server = build_server(
+        config, service=service, host=host, port=port, async_jobs=async_jobs, daemon=daemon
+    )
     actual_host, actual_port = server.server_address[:2]
     print(f"mephisto 监听 http://{actual_host}:{actual_port}")
     print(f"数据目录 {data_dir}")

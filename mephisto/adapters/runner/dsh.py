@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import shutil
@@ -41,6 +42,113 @@ _ERROR_LIMIT = 4000
 
 def _now() -> datetime:
     return datetime.now(tz=UTC)
+
+
+# ---------- Windows Job Object ----------
+#
+# 为什么不用 `taskkill /T` 了事：它只杀"调用那一刻的子树"。dsh 会拉起
+# `dsh-subprocess-local` 这类孙子进程，实测有一次打断之后它活了下来。
+# Job Object 是内核级的归属关系：句柄一关（或 TerminateJobObject），组内所有进程一起死，
+# 不依赖扫描时机，也不会因为被重挂而漏掉。
+
+
+class _LARGE_INTEGER(ctypes.Structure):
+    _fields_ = [("QuadPart", ctypes.c_longlong)]
+
+
+class _IO_COUNTERS(ctypes.Structure):
+    _fields_ = [
+        ("ReadOperationCount", ctypes.c_ulonglong),
+        ("WriteOperationCount", ctypes.c_ulonglong),
+        ("OtherOperationCount", ctypes.c_ulonglong),
+        ("ReadTransferCount", ctypes.c_ulonglong),
+        ("WriteTransferCount", ctypes.c_ulonglong),
+        ("OtherTransferCount", ctypes.c_ulonglong),
+    ]
+
+
+class _JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("PerProcessUserTimeLimit", _LARGE_INTEGER),
+        ("PerJobUserTimeLimit", _LARGE_INTEGER),
+        ("LimitFlags", ctypes.c_ulong),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", ctypes.c_ulong),
+        ("Affinity", ctypes.POINTER(ctypes.c_ulong)),
+        ("PriorityClass", ctypes.c_ulong),
+        ("SchedulingClass", ctypes.c_ulong),
+    ]
+
+
+class _JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", _JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", _IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+_PROCESS_SET_QUOTA = 0x0100
+_PROCESS_TERMINATE = 0x0001
+
+
+class WindowsJob:
+    """把进程放进 Job Object，保证"打断 = 整棵树消失"。"""
+
+    def __init__(self) -> None:
+        if os.name != "nt":
+            raise OSError("Windows Job Object 只在 Windows 上可用")
+        self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = self._kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise OSError(ctypes.get_last_error(), "CreateJobObjectW 失败")
+        self.handle = handle
+        info = _JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        ok = self._kernel32.SetInformationJobObject(
+            handle,
+            _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        )
+        if not ok:
+            self._kernel32.CloseHandle(handle)
+            raise OSError(ctypes.get_last_error(), "SetInformationJobObject 失败")
+        self._closed = False
+
+    def assign(self, pid: int) -> bool:
+        handle = self._kernel32.OpenProcess(_PROCESS_SET_QUOTA | _PROCESS_TERMINATE, False, pid)
+        if not handle:
+            return False
+        try:
+            return bool(self._kernel32.AssignProcessToJobObject(self.handle, handle))
+        finally:
+            self._kernel32.CloseHandle(handle)
+
+    def terminate(self) -> None:
+        if not self._closed:
+            self._kernel32.TerminateJobObject(self.handle, 1)
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._kernel32.CloseHandle(self.handle)
+
+
+def make_job() -> WindowsJob | None:
+    """拿不到 Job Object 也不算致命：退回 taskkill 那条路。"""
+    if os.name != "nt":
+        return None
+    try:
+        return WindowsJob()
+    except OSError:
+        return None
 
 
 def kill_tree(pid: int) -> None:
@@ -82,6 +190,7 @@ class DshRunner:
         self.dsh_cmd = list(dsh_cmd) if dsh_cmd else default_dsh_cmd()
         self.env_extra = dict(env_extra or {})
         self._proc: subprocess.Popen[bytes] | None = None
+        self._job: WindowsJob | None = None
         self._lock = threading.Lock()
         self._cancelled = False
 
@@ -101,6 +210,10 @@ class DshRunner:
         with self._lock:
             self._cancelled = True
             proc = self._proc
+            job = self._job
+        # 先掐 Job Object：孙子进程也一起死，不依赖 taskkill 的扫描时机
+        if job is not None:
+            job.terminate()
         if proc is not None and proc.poll() is None:
             kill_tree(proc.pid)
 
@@ -127,6 +240,11 @@ class DshRunner:
         )
         with self._lock:
             self._proc = proc
+            job = make_job()
+            self._job = job
+        if job is not None:
+            # 分配失败不致命：cancel() 里还有 taskkill 兜底
+            job.assign(proc.pid)
 
         def _on_timeout() -> None:
             nonlocal timed_out
@@ -167,8 +285,21 @@ class DshRunner:
             stderr_thread.join(timeout=2)
             with self._lock:
                 self._proc = None
+                job = self._job
+                self._job = None
+            if job is not None:
+                job.terminate()
             if proc.poll() is None:
                 kill_tree(proc.pid)
+            # 管道要显式关：被打断时读循环可能没读到 EOF，留着就是资源泄漏
+            for stream in (proc.stdout, proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except OSError:
+                        pass
+            if job is not None:
+                job.close()
 
         duration_ms = int((time.monotonic() - started) * 1000)
         stderr_text = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()

@@ -98,6 +98,14 @@ class JobRepo:
         row = self._db.query_one(f"SELECT {_COLUMNS} FROM job WHERE id = ?", (job_id,))
         return None if row is None else JobRow.from_row(row)
 
+    def cancel_queued(self, job_id: str, *, at: datetime) -> bool:
+        """只取消还没开跑的 job。已在跑的必须杀进程，那条路由 Daemon 负责。"""
+        cursor = self._db.execute(
+            "UPDATE job SET state = 'cancelled', finished_at = ? WHERE id = ? AND state = 'queued'",
+            (to_ms(at), job_id),
+        )
+        return cursor.rowcount > 0
+
     def counts(self) -> dict[str, int]:
         return dict(counts_of(self))
 

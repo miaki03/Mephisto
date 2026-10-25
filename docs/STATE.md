@@ -18,8 +18,8 @@
 | S6 | 提醒内核 + MCP 工具 | ✅ | `step-6` | |
 | S7 | 安卓工具链 + 空壳 APK（**在 Mephisto-Android 仓库**） | ✅ | `step-7`（Android 仓库） |
 | S8 | 安卓只读：会话列表 + 历史消息（Android 仓库） | ✅ | `step-8`（Android 仓库） |
-| S9 | 安卓发送：排队 + 三级撤销 + SSE（Android 仓库） | ⏳ 下一步 | — |
-| S10 | 安卓常驻通知 + 精确闹钟 + 日历（Android 仓库） | | — | |
+| S9 | 安卓发送：排队 + 三级撤销 + SSE（Android 仓库） | ✅ | `step-9`（Android 仓库） |
+| S10 | 安卓常驻通知 + 精确闹钟 + 日历（Android 仓库） | ⏳ 下一步 | — | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
 | S14 | 邮件 | 搁置 | |
 
@@ -76,7 +76,8 @@
 ## 5.1 HTTP 契约（S4 冻结，之后只加不改）
 
 - 鉴权：`Authorization: Bearer <token>`；`/healthz` 与 `/` 免鉴权。
-- 16 个端点：healthz / sessions(3) / messages(3) / events(SSE) / notices(2) / attachments(5) / devices(1)。
+- 17 个端点：healthz / sessions(3) / messages(3) / events(SSE) / notices(2) / attachments(5) / devices(1)
+  + **jobs/{id}/cancel**（S9 增补，只加不改：排队中删行，运行中杀进程树）。
 - 游标：`since_seq`（单调整数）；SSE 支持 `Last-Event-ID`，每 15 秒一个 `: ping`。
 - 响应体形状：`{items:[...]}`、`{session:{...}}`、`{message:{...}, reply:{...}, run:{...}}`、
   错误 `{error:{code,message}}`。
@@ -129,6 +130,18 @@
 - 构建结果：APK 28.22 MB，`dev.mephisto.app` / minSdk 29 / targetSdk 37 / MainActivity 可启动。
 - **客户端逻辑放在 `core/`（纯 JVM）**，17 个 JVM 单测在 `gradlew test` 里跑，不需要手机。
   其中 `RealPayloadTest` 用真服务端抓下来的四个响应当夹具。
+
+## 5.6 发送 / 撤销 / 打断（S9 实测）
+
+- **三段后悔**：0–3 秒在客户端本地（一个请求都不发）→ 排队中删行 → 运行中杀进程树。
+  前两段是状态机（`Outbox`），第三段靠 `POST /api/v1/jobs/{id}/cancel`。
+- **打断必须连孙子进程一起死**：实测 `taskkill /T` 之后仍见过 `dsh-subprocess-local` 存活，
+  所以父进程被塞进 **Windows Job Object**（`KILL_ON_JOB_CLOSE`），取消时 `TerminateJobObject`。
+  验证方法：打断前后数 `dsh-subprocess-local` 进程数，2 → 2（没有多出来）。
+- 真服务端实测：进入 running 0.5s 后打断，返回 `interrupted`，job 状态 `cancelled`，**没有落回复**。
+- 排队中取消：返回 `queued`，job 状态 `cancelled`，重复取消返回 409 `too_late`。
+- 客户端：`Outbox` / `SseParser` / `Backoff` / `ProgressTracker` 全是纯 JVM，
+  **53 个单测**（后悔期、编辑换 id、排队深度 5、SSE 多行 data、心跳注释、退避封顶、状态行文案）。
 
 ## 6. 本机已验证的验收命令
 

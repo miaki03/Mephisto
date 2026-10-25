@@ -758,6 +758,10 @@ E:\study\mephisto\
 | 产出 | `Sse.kt`（`okhttp-sse` + `Last-Event-ID` 重连）、发送框、失败重发、`client_msg_id` 生成、已读回执、**分片上传（4 MB/片，断点续传，逐片进度）**、拍照前压缩到 ≤2 MB |
 | 关键决策 | 回复是**整段到达**（提交级），客户端直接替换不拼接；「思考中」是**秒表 + 工具名**，不是假动画；`client_msg_id` 在 App 生成、重试复用；乐观更新；运行中发消息显示「已排队」，另给「打断并重来」；**超过 64 MB 的文件不传，提示放工作区 `inbox/`** |
 | 验收 | 发一句话看到**秒表 + 当前工具名**，回答整段出现；运行中再发一条显示「已排队」、结束后自动合并执行；点「打断」后任务管理器里无残留 `dsh`/`node`；飞行模式 3 秒再关，重发不产生两条；杀掉 App 再打开，`since=` 补齐；**8 MB 图片分 2 片传完、64 MB 文件分 16 片传完、90 MB 被客户端拦住** |
+| 实测结果 | 核心逻辑**纯 JVM 可测**：`Outbox`（三段后悔状态机）、`SseParser`、`Backoff`、`ProgressTracker`，**53 个单测**；真服务端验证：running 0.5s 打断 → `interrupted` + job `cancelled` + 无回复；排队中取消 → `queued`，重复取消 409 |
+| 服务端增补 | 契约**只加不改**：`POST /api/v1/jobs/{id}/cancel`。为了"打断后无残留"，运行器改用 **Windows Job Object**（`KILL_ON_JOB_CLOSE`）——实测 `taskkill /T` 之后仍有 `dsh-subprocess-local` 存活 |
+| 与计划的偏差 | **分片上传与拍照压缩没做**：它们与"发一句话、看进度、能打断"是两条独立的复杂度，放到 S9.1；SSE 用 `HttpURLConnection` + 自写行解析（不是 okhttp-sse），因为解析与重连都是纯逻辑，能在 JVM 单测里钉死 |
+| 未完成 | 真机上的界面呈现、"飞行模式 3 秒再关重发不产生两条"——后者在 `Outbox.retry` 复用 `client_msg_id` 上有单测，但没有真机验证 |
 | tag | `step-9` |
 
 #### 第 10 步 · A3 常驻 + 闹钟 + 日历 + 通知（3 天）

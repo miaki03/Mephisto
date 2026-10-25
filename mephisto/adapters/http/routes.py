@@ -43,9 +43,11 @@ class Api:
         uploads: UploadArea,
         version: str,
         async_jobs: bool = False,
+        daemon: Any = None,
     ) -> None:
         self.service = service
         self.async_jobs = async_jobs
+        self.daemon = daemon
         self.blobs = blobs
         self.uploads = uploads
         self.version = version
@@ -64,6 +66,7 @@ class Api:
         add("GET", r"^/api/v1/sessions/(?P<sid>[^/]+)/messages$", self.messages_list)
         add("POST", r"^/api/v1/sessions/(?P<sid>[^/]+)/messages$", self.messages_post)
         add("POST", r"^/api/v1/messages/(?P<mid>[^/]+)/ack$", self.messages_ack)
+        add("POST", r"^/api/v1/jobs/(?P<jid>[^/]+)/cancel$", self.jobs_cancel)
         add("GET", r"^/api/v1/events$", self.events)
         add("GET", r"^/api/v1/notices$", self.notices_list)
         add("POST", r"^/api/v1/notices/(?P<nid>[^/]+)/state$", self.notices_state)
@@ -181,6 +184,27 @@ class Api:
         if job is not None:
             payload["job_id"] = job.id
         return Response(200 if duplicate else 202, payload)
+
+    def jobs_cancel(self, request: Request) -> Response:
+        """三段撤销里的第②③段：排队中删行，运行中杀进程树。"""
+        job_id = request.params["jid"]
+        if self.daemon is None:
+            raise HttpError(409, "no_worker", "worker 未启动，取消不了")
+        result = self.daemon.cancel(job_id)
+        if result == "not_found":
+            raise HttpError(404, "job_not_found", "任务不存在")
+        if result == "too_late":
+            raise HttpError(409, "too_late", "任务已经结束，来不及了")
+        job = self.service.jobs.get(job_id)
+        session_id = job.session_id if job is not None else ""
+        if session_id:
+            self.service.events.append(
+                "job",
+                {"state": "cancelled", "job_id": job_id, "result": result},
+                at=self.service.clock.now(),
+                session_id=session_id,
+            )
+        return Response(200, {"job_id": job_id, "result": result})
 
     def messages_ack(self, request: Request) -> Response:
         ok = self.service.ack_message(request.params["mid"])
