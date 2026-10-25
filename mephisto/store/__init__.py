@@ -17,6 +17,7 @@ from pathlib import Path
 
 from .db import Database, from_ms, to_ms
 from .devices import DeviceInfo, DeviceRepo
+from .jobs import JobRepo, JobRow
 from .events import EventRepo, EventRow
 from .messages import AttachmentRepo, MessageRepo, MessageRow
 from .notices import NoticeRepo
@@ -33,6 +34,8 @@ def open_db(data_dir: Path | str) -> Database:
 __all__ = [
     "DeviceInfo",
     "DeviceRepo",
+    "JobRepo",
+    "JobRow",
     "AttachmentRepo",
     "DB_FILENAME",
     "Database",

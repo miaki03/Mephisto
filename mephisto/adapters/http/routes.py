@@ -42,8 +42,10 @@ class Api:
         blobs: BlobStore,
         uploads: UploadArea,
         version: str,
+        async_jobs: bool = False,
     ) -> None:
         self.service = service
+        self.async_jobs = async_jobs
         self.blobs = blobs
         self.uploads = uploads
         self.version = version
@@ -132,6 +134,9 @@ class Api:
         if not text.strip() and not attachment_ids:
             raise HttpError(400, "empty_message", "消息既没有文本也没有附件")
 
+        if self.async_jobs:
+            return self._enqueue_message(request, text, client_msg_id, attachment_ids)
+
         try:
             outcome = self.service.post_message(
                 request.params["sid"], text, client_msg_id=client_msg_id, attachment_ids=attachment_ids
@@ -153,6 +158,29 @@ class Api:
                 "usage": dict(outcome.run.usage),
             }
         return Response(200 if outcome.run is None or outcome.run.ok else 502, payload)
+
+    def _enqueue_message(
+        self,
+        request: Request,
+        text: str,
+        client_msg_id: str | None,
+        attachment_ids: list[str],
+    ) -> Response:
+        """异步模式：立刻返回 202，结果通过 SSE 推。这是 CF 下唯一可行的形状。"""
+        try:
+            in_row, job, duplicate = self.service.enqueue_message(
+                request.params["sid"], text, client_msg_id=client_msg_id, attachment_ids=attachment_ids
+            )
+        except KeyError as exc:
+            raise HttpError(404, "session_not_found", "会话不存在") from exc
+        payload: dict[str, Any] = {
+            "message": self._message_dto(in_row),
+            "duplicate": duplicate,
+            "queued": job is not None,
+        }
+        if job is not None:
+            payload["job_id"] = job.id
+        return Response(200 if duplicate else 202, payload)
 
     def messages_ack(self, request: Request) -> Response:
         ok = self.service.ack_message(request.params["mid"])

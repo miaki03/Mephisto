@@ -705,7 +705,9 @@ E:\study\mephisto\
 |---|---|
 | 产出 | `app/daemon.py`（三个 worker 线程：source / job / notice）；`jobs.py`（`job` 表 + `UPDATE...RETURNING` 抢占）；进程内 `queue.Queue` 只做唤醒、真值在表里 |
 | 关键决策 | 抢占靠一条 SQL（不用文件锁）；`attempts` 上限 3 + 指数退避；进程被杀后未完成 job 在启动时自动重排 |
-| 验收 | 并发提交 5 条消息不串会话；`Ctrl-C` 强杀再启动，未完成 job 自动重跑且**不重复回复**；job 失败时 notice 里出现一条 `kind=system` 的失败说明 |
+| 验收 | 并发提交 5 条消息不串会话 ✓；强杀再启动未完成 job 自动重排 ✓；job 失败写 `kind=system` notice ✓ |
+| 实测结果 | **151 个用例全绿**（双跑）；真服务异步端到端：POST 返回 **202（0.00s）**，worker 4.1s 后落回复，SSE 推送 `message→job×10→message`；`claim_next` 单条 SQL 保证同会话不并发 |
+| 与计划的偏差 | 只用一个 worker 线程（不是计划写的三个）：source 是 HTTP 请求线程本身，notice 由 S6 的调度器负责；`attempts` 递增但**重试退避留到 S6 与调度器一起做**，现在失败即终态 + 写 notice（不静默） |
 | tag | `step-5` |
 
 #### 第 6 步 · 提醒内核 + notice 投递（1.5 天）

@@ -14,8 +14,8 @@
 | S2 | 存储与迁移（13 表） | ✅ | `step-2` |
 | S3 | 运行器（DSH 子进程） | ✅ | `step-3` |
 | S4 | HTTP API + SSE（16 端点，契约冻结） | ✅ | `step-4` |
-| S5 | 队列与守护进程 | ⏳ 下一步 | — |
-| S6 | 提醒内核 + MCP 工具 | | |
+| S5 | 队列与守护进程 | ✅ | `step-5` |
+| S6 | 提醒内核 + MCP 工具 | ⏳ 下一步 | — | |
 | S7–S10 | 安卓（工具链/只读/发送/闹钟） | | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
 | S14 | 邮件 | 搁置 | |
@@ -86,6 +86,17 @@
 - 端到端 2.2s：建会话 → 发消息 → 真 dsh → 回复 `1 + 1 = **2**`；`tokens=6059 cacheRead=5504`。
 - 中文往返无损（用 python 发，PowerShell 的 `ConvertTo-Json` 会把中文变成 `?`——那是客户端问题）。
 - **浏览器的 EventSource 不能带 Bearer 头**，所以调试页的 SSE 按钮改成打印 curl 命令；真客户端（OkHttp）可以带头。
+
+## 5.3 队列（S5 实测）
+
+- **同步 vs 异步两条路径共存**：`ChatService.post_message`（同步，跑在调用线程）与
+  `enqueue_message`+`execute_job`（异步，worker 跑）。`serve` 默认异步，`build_api(async_jobs=False)` 可回同步。
+- **异步时 POST 立刻 202**（实测 0.00s），回复经 SSE 的 `message` 事件到客户端；真 dsh 那一轮 4.1s。
+- 抢占是**一条 SQL**（`UPDATE ... RETURNING`），`WHERE NOT EXISTS (同会话 running)` 保证不串；
+  DDL 里的部分唯一索引是最后一道保险。
+- 启动恢复：`running` 且 `started_at` 超过 30 分钟的 job 会被放回 `queued`（实测重排 1 个）。
+- 失败会写一条 `kind=system` 的 notice，`origin=job:<id>:failed`——不静默失败。
+- SSE 事件序实测：`message → job×10 → message…`，客户端能据此显示"排队中/执行中/完成"。
 
 ## 6. 本机已验证的验收命令
 

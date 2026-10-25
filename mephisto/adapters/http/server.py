@@ -175,12 +175,13 @@ def _bearer(header: str | None) -> str | None:
     return parts[1].strip() or None
 
 
-def build_api(config: Config, *, service: ChatService) -> Api:
+def build_api(config: Config, *, service: ChatService, async_jobs: bool = False) -> Api:
     return Api(
         service,
         blobs=BlobStore(config.data_dir / "blobs"),
         uploads=UploadArea(config.data_dir / "uploads"),
         version=__version__,
+        async_jobs=async_jobs,
     )
 
 
@@ -208,9 +209,10 @@ def build_server(
     service: ChatService | None = None,
     host: str | None = None,
     port: int | None = None,
+    async_jobs: bool = False,
 ) -> ThreadingHTTPServer:
     service = service or build_service(config)
-    api = build_api(config, service=service)
+    api = build_api(config, service=service, async_jobs=async_jobs)
     bound = type("BoundHandler", (Handler,), {"api": api})
     server = ThreadingHTTPServer(
         (host if host is not None else config.server.host, port if port is not None else config.server.port),
@@ -220,13 +222,23 @@ def build_server(
     return server
 
 
-def serve(config: Config, *, host: str | None = None, port: int | None = None) -> int:
+def serve(config: Config, *, host: str | None = None, port: int | None = None, async_jobs: bool = True) -> int:
+    from ...app.daemon import Daemon
+
     data_dir: Path = config.data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
-    server = build_server(config, host=host, port=port)
+    service = build_service(config)
+    daemon = Daemon(service) if async_jobs else None
+    server = build_server(config, service=service, host=host, port=port, async_jobs=async_jobs)
     actual_host, actual_port = server.server_address[:2]
     print(f"mephisto 监听 http://{actual_host}:{actual_port}")
     print(f"数据目录 {data_dir}")
+    if daemon is not None:
+        requeued = daemon.recover()
+        daemon.start()
+        print(f"worker 已启动（启动恢复重排 {requeued} 个任务）")
+    else:
+        print("worker 未启动：消息同步执行（仅调试用）")
     print("Ctrl-C 退出")
     try:
         server.serve_forever()
@@ -235,4 +247,6 @@ def serve(config: Config, *, host: str | None = None, port: int | None = None) -
     finally:
         server.shutdown()
         server.server_close()
+        if daemon is not None:
+            daemon.stop()
     return 0
