@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mephisto"
+version = "0.0.1"
+description = "个人 Agent 服务内核：DSH 负责执行，Mephisto 负责账本与信道"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = []                      # 运行时零第三方依赖，这是硬约束
+
+[project.optional-dependencies]
+# 开发依赖。当前沙箱里 pip 装不了包（临时目录被拦），所以测试用标准库 unittest 写，
+# `python -m pytest -q` 在能装包的环境里同样可用（pytest 原生收集 TestCase）。
+dev = ["pytest>=8"]
+
+[project.scripts]
+mephisto = "mephisto.cli:main"
+
+[tool.setuptools]
+packages = ["mephisto"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]

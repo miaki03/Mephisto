@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mephisto.local/schemas/manifest.schema.json",
+  "title": "Mephisto Agent Manifest",
+  "description": "Agent 的唯一交付契约：<任务目录>/outbox/manifest.json。任务结束必须写出，失败也要写。字段与现有实现（mailbot/AGENTS.md）一致，加字段是兼容变更。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["taskId", "status", "reply"],
+  "properties": {
+    "v": { "const": 1 },
+    "taskId": { "type": "string", "description": "照抄 prompt 里的任务号；不一致会被判为无效交付" },
+    "status": { "enum": ["ok", "partial", "failed"] },
+    "reply": { "type": "string", "maxLength": 20000, "description": "回给用户的正文。建议 ≤1200 字，超长由执行器分条" },
+    "files": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "要作为附件发回的文件；必须是任务目录内的相对路径",
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "localOnly": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "明确只留本地、不要外发的路径（目录或文件）",
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "reminders": {
+      "type": "array",
+      "maxItems": 50,
+      "description": "需要定时提醒时写；到点由调度器直接发信，不经过模型",
+      "items": { "$ref": "#/$defs/reminderRequest" }
+    },
+    "sends": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "任务中途想立刻发出去的东西（与 reminders 同构，去掉 repeat 语义）",
+      "items": { "$ref": "#/$defs/reminderRequest" }
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 2000,
+      "description": "过程说明 / 失败原因。不是给用户看的正文；≤2 行"
+    }
+  },
+  "$defs": {
+    "reminderRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fireAt", "text"],
+      "properties": {
+        "fireAt": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "ISO8601 带偏移（推荐）或相对写法（14:30 / 明天 09:00 / 每天 08:00）。解析失败时执行器应回信询问，不要猜"
+        },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "channel": { "enum": ["email"], "default": "email", "description": "v1 只有 email；其它值应明确回执'未启用'而不是静默丢弃" },
+        "repeat": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["once", "daily", "weekly"] },
+            "weekdays": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 1, "maximum": 7 },
+              "description": "kind=weekly 时使用，ISO 周几（1=周一）"
+            }
+          }
+        },
+        "mentions": { "type": "array", "items": { "type": "string" } },
+        "dedupeKey": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "同一 dedupeKey 的提醒重复提交时只保留一条；用于模型重跑时不产生重复提醒"
+        }
+      }
+    }
+  }
+}

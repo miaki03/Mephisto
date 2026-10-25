@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mephisto.local/schemas/envelope.schema.json",
+  "title": "Mephisto Envelope",
+  "description": "一封消息的统一形态。收发共用；direction 区分。传输层负责填充，路由层负责补 route。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "direction", "transport", "received_at", "from", "to", "subject", "body", "attachments"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "$ref": "#/$defs/ulid" },
+    "direction": { "enum": ["in", "out"] },
+    "transport": { "enum": ["mail", "http", "acp", "local"], "description": "mail=v1；http 留给自建信道；local 用于内部触发的伪消息" },
+    "received_at": { "type": "string", "format": "date-time", "description": "ISO8601 带偏移，入库时另存 UTC epoch 秒" },
+    "from": { "$ref": "#/$defs/addr" },
+    "to": { "type": "array", "items": { "$ref": "#/$defs/addr" }, "minItems": 1 },
+    "cc": { "type": "array", "items": { "$ref": "#/$defs/addr" } },
+    "subject": { "type": "string", "maxLength": 998 },
+    "subject_normalized": {
+      "type": "string",
+      "description": "剥离 Re:/RE:/回复:/转发:/Fwd: 与多余空白后的主题。路由 K3 只看这个字段。"
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "description": "纯文本形式；由 HTML 转换或原始 text/plain" },
+        "html_path": { "type": "string", "description": "相对 state/files/ 的路径，可为空" }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filename", "size", "digest"],
+        "properties": {
+          "filename": { "type": "string", "maxLength": 255 },
+          "media_type": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "path": { "type": "string", "description": "相对 state/files/；解析时必须校验不逃逸" }
+        }
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "message_id": { "type": "string", "description": "含尖括号原样保存，如 <01J...@mephisto.example.com>" },
+        "in_reply_to": { "type": "string" },
+        "references": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "headers": {
+      "type": "object",
+      "description": "仅保留白名单头，值一律字符串",
+      "additionalProperties": { "type": "string" }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "来自 Authentication-Results / Received-SPF。缺失时不要猜。",
+      "properties": {
+        "spf": { "enum": ["pass", "fail", "softfail", "neutral", "none", "unknown"] },
+        "dkim": { "enum": ["pass", "fail", "none", "unknown"] },
+        "dmarc": { "enum": ["pass", "fail", "none", "unknown"] },
+        "sender_verified": { "type": "boolean", "description": "From 是否在发件人白名单内（这是唯一用于鉴权的字段）" }
+      }
+    },
+    "route": {
+      "type": "object",
+      "description": "路由层填充。落库后不可变，便于复盘。",
+      "additionalProperties": false,
+      "required": ["session_id", "decided_by"],
+      "properties": {
+        "session_id": { "type": "string" },
+        "decided_by": { "enum": ["message_id_token", "references", "address", "subject_tag", "classifier", "fallback_chatter"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "string", "description": "classifier 决策时必须非空，引用原文片段" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "投递状态。邮件没有回执，所以全部可空——null 表示『未知』，不要用 false/0 表示『没有』。",
+      "properties": {
+        "delivered_at": { "type": ["string", "null"], "format": "date-time" },
+        "seen_at": { "type": ["string", "null"], "format": "date-time" },
+        "acked_by": { "type": ["string", "null"], "description": "哪个设备确认过（见 device 表）" }
+      }
+    },
+    "e2ee": {
+      "type": ["object", "null"],
+      "description": "端到端加密状态。null = 无加密（邮件的常态）。为自建信道预留，现在不要填假值。",
+      "additionalProperties": false,
+      "properties": {
+        "scheme": { "enum": ["none", "autocrypt", "signal"] },
+        "verified": { "type": "boolean" },
+        "key_fingerprint": { "type": "string" }
+      }
+    },
+    "client_msg_id": {
+      "type": "string",
+      "maxLength": 64,
+      "description": "客户端生成的幂等键。弱网重试时用它去重——重复执行一次 DSH 任务是真的要花钱"
+    },
+    "spool_path": { "type": "string", "description": "state/inbox/<id>/ 的相对路径" },
+    "raw_eml": { "type": "string", "description": "原始 .eml 相对路径；永远保留，解析出错时唯一的依靠" }
+  },
+  "$defs": {
+    "ulid": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$" },
+    "addr": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address"],
+      "properties": {
+        "address": { "type": "string", "format": "email", "maxLength": 320 },
+        "name": { "type": "string", "maxLength": 200 }
+      }
+    }
+  }
+}

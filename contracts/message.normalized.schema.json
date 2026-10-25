@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mephisto.local/schemas/message.normalized.schema.json",
+  "title": "Mephisto Normalized Chat Message",
+  "description": "聊天消息的统一形态。字段取自 research/chatlog/80-field-mapping.md §2.3（11 必需 + 4 可选）；raw 永不丢弃。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "platform", "messageId", "sessionId", "sessionType", "senderId", "timestampSec", "type", "text", "isSelf", "senderName", "raw"],
+  "properties": {
+    "v": { "const": 1 },
+    "platform": { "enum": ["wechat", "qq", "qqbot"], "description": "没有它，不同平台的 id 会撞" },
+    "messageId": {
+      "type": "string",
+      "description": "统一字符串化。微信 serverId 超过 2^53，必须字符串，否则精度丢失"
+    },
+    "sessionId": {
+      "type": "string",
+      "description": "平台原样：wxid_*/xxx@chatroom / group_id / group_openid（官方 Bot 的 openid 不是群号）"
+    },
+    "sessionType": { "enum": ["group", "private", "official", "other"] },
+    "senderId": { "type": "string", "description": "wxid / QQ 号 / openid" },
+    "senderName": { "type": "string", "description": "展示名：群昵称优先，回退昵称，再回退 id" },
+    "timestampSec": { "type": "integer", "minimum": 0, "description": "统一到 epoch 秒。官方 Bot 的 RFC3339 必须先 parse" },
+    "type": {
+      "enum": ["text", "image", "voice", "video", "file", "sticker", "link", "card", "forward", "reply", "system", "unknown"]
+    },
+    "text": {
+      "type": "string",
+      "description": "可直接喂模型的文本。图片等非文本给占位符（[图片]）；单条超过 2000 字符须截断（实测最大 115,126）"
+    },
+    "isSelf": { "type": ["boolean", "null"], "description": "微信 isSend 是三态，null 表示未知，不要当 false" },
+    "quoteMessageId": { "type": "string" },
+    "mentions": { "type": "array", "items": { "type": "string" }, "description": "微信拿不到结构化 @，此处为空数组" },
+    "seq": {
+      "type": "string",
+      "description": "平台内序号，用于同秒排序：微信 sort_seq（= create_time*1000+ms）/ QQ message_seq。官方 Bot 无"
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind"],
+        "properties": {
+          "kind": { "enum": ["image", "voice", "video", "file"] },
+          "url": { "type": "string", "description": "可能有有效期（官方 Bot 的 rkey），必须尽快落地" },
+          "localPath": { "type": "string" },
+          "size": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "raw": {
+      "type": "object",
+      "description": "原始事件或原始行。永不丢弃——出了解析 bug 只能靠它回溯"
+    }
+  }
+}

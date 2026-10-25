@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mephisto.local/schemas/reminder.schema.json",
+  "title": "Mephisto Reminder",
+  "description": "一条提醒的落库结构（表 reminder 的行）。触发记录在表 occurrence 里，主键 (reminder_id, occur_utc) 保证幂等。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "id", "owner", "kind", "title", "due_at_utc", "tz", "channels", "state", "created_at"],
+  "properties": {
+    "v": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$", "description": "ULID" },
+    "owner": { "enum": ["user", "system"], "description": "user=用户要求的；system=夜间整理/摘要等内部作业。两者共用引擎" },
+    "kind": { "enum": ["reminder", "job"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "body": { "type": "string", "maxLength": 4000 },
+    "due_at_utc": { "type": "integer", "minimum": 0, "description": "首次触发，epoch 秒（UTC）" },
+    "tz": { "type": "string", "minLength": 1, "description": "IANA 时区，如 Asia/Shanghai。必填，且必须在邮件正文里显式写出" },
+    "rrule": {
+      "type": ["string", "null"],
+      "description": "只支持子集：once / daily / weekly:MO,WE / monthly:15 / every:2:week。遇到不支持的写法必须报错，不要猜"
+    },
+    "origin_session": {
+      "type": ["string", "null"],
+      "description": "在哪条会话里创建的。用户回复提醒邮件时落回这条会话，从而拿到完整上下文"
+    },
+    "channels": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["mail", "alarm", "calendar"] },
+      "description": "v1 只有 mail；alarm/calendar 是安卓侧接入点"
+    },
+    "priority": { "enum": ["high", "normal"], "default": "normal", "description": "high 才允许在批量合并时单独发送" },
+    "state": { "enum": ["scheduled", "fired", "cancelled", "missed"] },
+    "created_at": { "type": "integer", "minimum": 0 },
+    "fire_count": { "type": "integer", "minimum": 0, "default": 0 },
+    "depends_on": { "type": ["string", "null"], "description": "预留：完成另一条提醒后才触发。v1 不实现，字段先留" }
+  }
+}
