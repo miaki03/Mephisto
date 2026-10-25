@@ -45,6 +45,7 @@ class Config:
 
     @property
     def data_dir(self) -> Path:
+        """相对**仓库根**解析，不是相对配置文件——一个部署只有一个 state 目录。"""
         return (self.root / self.storage.data_dir).resolve()
 
     @property

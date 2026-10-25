@@ -29,7 +29,7 @@ class CliTest(unittest.TestCase):
                 self.assertIn(expected, out)
 
     def test_unfinished_commands_say_so(self) -> None:
-        for command, step in (("serve", "4"), ("run", "3"), ("db", "2")):
+        for command, step in (("serve", "4"), ("run", "3")):
             with self.subTest(command=command):
                 code, _, err = run_capture([command])
                 self.assertEqual(code, 2)

@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -41,7 +41,6 @@ class Notice:
     client_ref: str | None = None
     acked_at: datetime | None = None
     snooze_until: datetime | None = None
-    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.kind not in NOTICE_KINDS:
@@ -116,8 +115,6 @@ class Notice:
             data["acked_at"] = codec.to_iso(self.acked_at)
         if self.snooze_until is not None:
             data["snooze_until"] = codec.to_iso(self.snooze_until)
-        if self.meta:
-            data["meta"] = dict(self.meta)
         return data
 
     @classmethod
@@ -129,9 +126,6 @@ class Notice:
              "session_id", "origin", "client_ref", "acked_at", "snooze_until", "meta"),
             where,
         )
-        meta = data.get("meta") or {}
-        if not isinstance(meta, dict):
-            raise codec.DecodeError(f"{where}.meta 应为对象")
         return cls(
             id=codec.as_ulid(codec.get(data, "id", where, required=True), f"{where}.id"),
             kind=codec.as_enum(codec.get(data, "kind", where, required=True), NOTICE_KINDS, f"{where}.kind"),
@@ -151,5 +145,4 @@ class Notice:
                 if data.get("snooze_until") is not None
                 else None
             ),
-            meta=dict(meta),
         )

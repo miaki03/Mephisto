@@ -104,9 +104,42 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=None)
 
     sub.add_parser("run", help="跑一轮任务（第 3 步）")
-    sub.add_parser("db", help="数据库维护（第 2 步）")
+
+    db = sub.add_parser("db", help="数据库维护")
+    db.add_argument("action", nargs="?", default="check", choices=("migrate", "check"), help="migrate 建表/升级；check 体检")
+
     sub.add_parser("version", help="打印版本")
     return parser
+
+
+def cmd_db(cfg: Config, action: str) -> int:
+    from .store import open_db
+
+    db = open_db(cfg.data_dir)
+    try:
+        if action == "migrate":
+            before, after = db.migrate()
+            if before == after:
+                print(f"数据库已是最新：v{after}（{db.path}）")
+            else:
+                print(f"迁移完成：v{before} → v{after}（{db.path}）")
+            return 0
+
+        info = db.check()
+        print(f"数据库      {info['path']}")
+        print(f"schema 版本 v{info['user_version']}   journal_mode={info['journal_mode']}")
+        print(f"完整性      {info['integrity']}   外键问题 {info['foreign_key_problems']} 处")
+        if info["user_version"] == 0 or not info["tables"]:
+            print("结论：尚未初始化，先跑 `mephisto db migrate`")
+            return 1
+        print(f"表          {len(info['tables'])} 张")
+        for name, rows in info["tables"].items():
+            print(f"  {name:<18} {rows:>6} 行")
+        ok = info["integrity"] == "ok" and info["foreign_key_problems"] == 0
+        print("结论：通过" if ok else "结论：有问题")
+        return 0 if ok else 1
+    finally:
+        db.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,12 +151,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load(args.config)
     if args.command == "doctor":
         return cmd_doctor(cfg)
+    if args.command == "db":
+        return cmd_db(cfg, args.action)
     if args.command == "serve":
         return _not_yet("serve", "4")
     if args.command == "run":
         return _not_yet("run", "3")
-    if args.command == "db":
-        return _not_yet("db", "2")
     return _not_yet(str(args.command), "?")
 
 

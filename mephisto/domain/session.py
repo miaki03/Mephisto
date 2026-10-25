@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -25,7 +25,6 @@ class Session:
     kind: str = "chatter"
     state: str = "active"
     seq: int = 0          # 增量同步用的单调游标
-    meta: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.kind not in SESSION_KINDS:
@@ -62,8 +61,6 @@ class Session:
             "last_active_at": codec.to_iso(self.last_active_at),
             "seq": self.seq,
         }
-        if self.meta:
-            data["meta"] = dict(self.meta)
         return data
 
     @classmethod
@@ -74,9 +71,6 @@ class Session:
             ("id", "title", "kind", "state", "created_at", "last_active_at", "seq", "meta"),
             where,
         )
-        meta = data.get("meta") or {}
-        if not isinstance(meta, dict):
-            raise codec.DecodeError(f"{where}.meta 应为对象")
         return cls(
             id=codec.as_ulid(codec.get(data, "id", where, required=True), f"{where}.id"),
             title=codec.as_str(codec.get(data, "title", where, required=True), f"{where}.title", max_len=120, min_len=1),
@@ -87,5 +81,4 @@ class Session:
             kind=codec.as_enum(codec.get(data, "kind", where, default="chatter"), SESSION_KINDS, f"{where}.kind"),
             state=codec.as_enum(codec.get(data, "state", where, default="active"), SESSION_STATES, f"{where}.state"),
             seq=codec.as_int(codec.get(data, "seq", where, default=0), f"{where}.seq", minimum=0),
-            meta=dict(meta),
         )

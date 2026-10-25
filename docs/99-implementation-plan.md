@@ -667,9 +667,12 @@ E:\study\mephisto\
 
 | 项 | 内容 |
 |---|---|
-| 产出 | `store/schema.sql`（§11 的 12 张表）、迁移器（`PRAGMA user_version` + 事务 + 编号 SQL）、`store/repo.py` 每表一个小类，SQL 手写 |
-| 关键决策 | WAL；单连接 + `RLock`；`check_same_thread=False`；唯一约束写进 DDL 而不是靠代码检查；**所有可同步表都带 `seq`** |
-| 验收 | 迁移幂等（跑两次 `user_version` 不变）；`INSERT OR IGNORE` 去重生效；删会话时 `message.session_id` 报 `RESTRICT` 而不是静默级联；`python -m mephisto db check` 通过 |
+| 产出 | `store/migrations/001_init.sql`（13 张表全量 DDL）；`store/db.py`（连接 / PRAGMA / 迁移器 / 体检）；`store/{sessions,messages,events}.py`（按聚合拆，不按行数拆）；`mephisto db migrate|check` |
+| 关键决策 | WAL + `foreign_keys=ON` + `synchronous=NORMAL`；一条连接 + `RLock`；`check_same_thread=False`；唯一约束与外键全写进 DDL；**时间列一律 epoch 毫秒**（与 ULID 同精度，跨表不用换算）；`message.seq`/`event_log.seq` 用 `INTEGER PRIMARY KEY AUTOINCREMENT`——**游标由库给**，不在应用层算 `max+1`；「同会话只许一个 running job」由部分唯一索引保证；`route_decision` 只追加 |
+| 仓库只写用得上的 | 表全建（DDL 是契约，成本低），但 repo 只为当前需要的表写：`notice`/`reminder`/`job`/`device`/`upload` 分别留到 S6/S6/S5/S9/S9，不预先写没人调用的代码 |
+| 验收 | 迁移幂等 ✓；`INSERT OR IGNORE` 去重生效（`client_msg_id` 与 `(channel, external_id)` 两组都测）✓；删会话时消息报 `RESTRICT` ✓；`python -m mephisto db check` 通过 ✓ |
+| 实测结果 | **107 个用例全绿**（unittest + pytest 双跑）；真机 `db migrate` 打印「v0 → v1」，再跑打印「已是最新」；`db check` 显示 13 张表、`journal_mode=wal`、完整性 ok、外键问题 0 |
+| 踩到的坑 | `data_dir` 相对**仓库根**解析，测试里给了相对路径 → 写进了仓库自己的 `state/`。已改测试给绝对路径，并在 `config.data_dir` 上写明这条语义 |
 | tag | `step-2` |
 
 #### 第 3 步 · 运行器（DSH）（1.5 天）
