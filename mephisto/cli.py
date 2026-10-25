@@ -120,8 +120,54 @@ def build_parser() -> argparse.ArgumentParser:
     device_revoke = device_sub.add_parser("revoke", help="吊销设备")
     device_revoke.add_argument("device_id")
 
+    remind = sub.add_parser("remind", help="创建提醒")
+    remind.add_argument("text", help='如 "3分钟后 喝水" 或 "明天15:00 交表"')
+    remind.add_argument("--session", default=None, help="来源会话 id")
+
+    sub.add_parser("mcp", help="MCP stdio 服务（给 dsh 当工具用）")
+
     sub.add_parser("version", help="打印版本")
     return parser
+
+
+def cmd_remind(cfg: Config, *, text: str, session_id: str | None) -> int:
+    from .app.reminders import ReminderService
+    from .app.timeparse import TimeParseError
+    from .store import open_db
+
+    db = open_db(cfg.data_dir)
+    db.migrate()
+    try:
+        service = ReminderService(db, tz=cfg.timezone)
+        try:
+            reminder = service.create_from_text(text, origin_session=session_id)
+        except TimeParseError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        notice = service.materialize(reminder)
+        due_local = reminder.due_at_utc.astimezone()
+        print(f"已建提醒 {reminder.id}")
+        print(f"  标题 {reminder.title}")
+        print(f"  时刻 {due_local:%Y-%m-%d %H:%M %Z}（UTC {reminder.due_at_utc.isoformat()}）")
+        print(f"  notice {notice.id}")
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_mcp(cfg: Config) -> int:
+    from .adapters.mcp import McpServer, serve_stdio
+    from .app.reminders import ReminderService
+    from .store import open_db
+
+    db = open_db(cfg.data_dir)
+    db.migrate()
+    try:
+        service = ReminderService(db, tz=cfg.timezone)
+        server = McpServer(service, memory_path=cfg.root / "workspace" / "memory" / "inbox.md")
+        return serve_stdio(server)
+    finally:
+        db.close()
 
 
 def cmd_serve(cfg: Config, *, host: str | None, port: int | None) -> int:
@@ -274,6 +320,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_run(cfg, text=args.text, dry_run=args.dry_run, verbose=args.verbose)
     if args.command == "serve":
         return cmd_serve(cfg, host=args.host, port=args.port)
+    if args.command == "remind":
+        return cmd_remind(cfg, text=args.text, session_id=args.session)
+    if args.command == "mcp":
+        return cmd_mcp(cfg)
     return _not_yet(str(args.command), "?")
 
 

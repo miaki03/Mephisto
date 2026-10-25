@@ -42,6 +42,7 @@ class Config:
     runner: RunnerConfig = field(default_factory=RunnerConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     source: Path | None = None
+    timezone: str = "Asia/Shanghai"
 
     @property
     def data_dir(self) -> Path:
@@ -72,6 +73,7 @@ class Config:
                 "timeout_seconds": self.runner.timeout_seconds,
             },
             "storage": {"data_dir": str(self.data_dir)},
+            "timezone": self.timezone,
         }
 
 
@@ -127,5 +129,14 @@ def load(path: Path | None = None, *, root: Path | None = None) -> Config:
         timeout_seconds=int(runner_raw.get("timeout_seconds", RunnerConfig.timeout_seconds)),
     )
     storage = StorageConfig(data_dir=str(storage_raw.get("data_dir", StorageConfig.data_dir)))
+    reminder_raw = _section(raw, "reminder")
+    timezone = os.environ.get("MEPHISTO_TZ", str(reminder_raw.get("tz", "Asia/Shanghai")))
 
-    return Config(root=base, server=server, runner=runner, storage=storage, source=config_file)
+    return Config(
+        root=base,
+        server=server,
+        runner=runner,
+        storage=storage,
+        source=config_file,
+        timezone=timezone,
+    )

@@ -224,11 +224,14 @@ def build_server(
 
 def serve(config: Config, *, host: str | None = None, port: int | None = None, async_jobs: bool = True) -> int:
     from ...app.daemon import Daemon
+    from ...app.reminders import ReminderService
+    from ...app.scheduler import Scheduler
 
     data_dir: Path = config.data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
     service = build_service(config)
     daemon = Daemon(service) if async_jobs else None
+    scheduler = Scheduler(ReminderService(service.db, clock=service.clock, tz=config.timezone))
     server = build_server(config, service=service, host=host, port=port, async_jobs=async_jobs)
     actual_host, actual_port = server.server_address[:2]
     print(f"mephisto 监听 http://{actual_host}:{actual_port}")
@@ -239,6 +242,9 @@ def serve(config: Config, *, host: str | None = None, port: int | None = None, a
         print(f"worker 已启动（启动恢复重排 {requeued} 个任务）")
     else:
         print("worker 未启动：消息同步执行（仅调试用）")
+    fired = scheduler.tick()
+    scheduler.start()
+    print(f"调度器已启动（首轮：触发 {fired['fired']} 条，过期 {fired['missed']} 条）")
     print("Ctrl-C 退出")
     try:
         server.serve_forever()
@@ -247,6 +253,7 @@ def serve(config: Config, *, host: str | None = None, port: int | None = None, a
     finally:
         server.shutdown()
         server.server_close()
+        scheduler.stop()
         if daemon is not None:
             daemon.stop()
     return 0

@@ -716,7 +716,9 @@ E:\study\mephisto\
 |---|---|
 | 产出 | `scheduler.py`（最小堆 + 60 秒睡眠上限 + 到点写 notice）；`reminder` 表（规则）+ 展开成 notice；**`mephisto mcp`（stdio MCP server，7 个工具）**；`python -m mephisto remind "3分钟后 提醒我喝水"` 一条命令；`GET /api/v1/notices` 可用 |
 | 关键决策 | `notice.origin` 唯一索引 = 幂等本体；宽限 2 小时内补发并标"（延迟）"，超时合并成"你错过了 N 条提醒"；**不做 `.ics`、不做 SMTP**（邮件搁置后都不需要） |
-| 验收 | 时间旅行测试：把系统时钟推到 +3 小时，重启后**只补发一次**；同一提醒重复调度只产生一条 notice；`curl` 能查到未来 7 天的 notice |
+| 验收 | 时间旅行测试：时钟推到 +3 小时，**只补发一次** ✓；同一提醒重复调度只产生一条 notice ✓；`curl` 能查到未来 7 天的 notice ✓ |
+| 实测结果 | **194 个用例全绿**（双跑）；真 MCP subprocess：initialize / tools_list(5) / remind_add 全通；真库里 `GET /notices` 返回 2 条 pending；`mephisto remind "3分钟后 喝水"` 一条命令建好规则+notice |
+| 与计划的偏差 | 工具做了 **5 个**（remind_add/list/cancel/reschedule + memory_append），`chatlog_*` 留到 S13——现在没有数据源，声明出来只会让模型调用一个必然失败的工具 |
 | tag | `step-6` |
 
 **阶段 A 结束时**：用 curl 能完成"建会话 → 发消息 → 收到 DSH 回复 → 拿到提醒真值"。服务端已经可用了，只是用起来要靠命令行。

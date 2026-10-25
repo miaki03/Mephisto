@@ -15,8 +15,8 @@
 | S3 | 运行器（DSH 子进程） | ✅ | `step-3` |
 | S4 | HTTP API + SSE（16 端点，契约冻结） | ✅ | `step-4` |
 | S5 | 队列与守护进程 | ✅ | `step-5` |
-| S6 | 提醒内核 + MCP 工具 | ⏳ 下一步 | — | |
-| S7–S10 | 安卓（工具链/只读/发送/闹钟） | | |
+| S6 | 提醒内核 + MCP 工具 | ✅ | `step-6` | |
+| S7–S10 | 安卓（工具链/只读/发送/闹钟） | ⏳ 下一步（S7 起） | — | |
 | S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
 | S14 | 邮件 | 搁置 | |
 
@@ -98,6 +98,19 @@
 - 失败会写一条 `kind=system` 的 notice，`origin=job:<id>:failed`——不静默失败。
 - SSE 事件序实测：`message → job×10 → message…`，客户端能据此显示"排队中/执行中/完成"。
 
+## 5.4 提醒与 MCP（S6 实测）
+
+- 时间解析只认少数写法：`3分钟后` / `2 小时` / `明天15:00` / `明天下午3点` / `15点半` / ISO。
+  **看不懂就报错**——猜时间会让提醒在错误的日子响。
+- 提醒 = 规则（`reminder`）+ 投递单元（`notice`），`origin = reminder:<id>@<due_iso>` 唯一索引做幂等。
+- 调度器 tick 顺序：**先清理旧 pending，再触发本轮到期的**。反过来会把刚触发的提醒立刻判成"错过"。
+- 宽限 2 小时：宽限内补发并标"（延迟）"；超过则**不单独发**，合并成一条"你错过了 N 条提醒"（一天一条）。
+- MCP stdio 实测（真 subprocess）：`initialize` → `serverInfo={mephisto,0.0.1}`；`tools/list` → **5 个工具**；
+  `tools/call remind_add` → 落库成功，`due_local=2026-10-25T19:52:16+08:00`。
+- 工具集：`remind_add` / `remind_list` / `remind_cancel` / `remind_reschedule` / `memory_append`。
+  `chatlog_search` / `chatlog_digest` 留到 S13（那时才有数据源，现在声明等于骗模型）。
+- CLI：`mephisto remind "3分钟后 喝水"`、`mephisto mcp`；`serve` 会同时起 worker 与调度器。
+
 ## 6. 本机已验证的验收命令
 
 ```powershell
@@ -109,6 +122,8 @@ python -m mephisto db migrate  # 迁移到最新
 python -m mephisto db check    # 完整性 + 行数
 python -m mephisto serve        # 起服务（默认 127.0.0.1:8787）
 python -m mephisto device add --name 手机   # 发令牌
+python -m mephisto remind "3分钟后 喝水" # 建提醒
+python -m mephisto mcp                    # MCP stdio（给 dsh 当工具）
 git push -u origin main --tags # 推代码与标签
 ```
 
