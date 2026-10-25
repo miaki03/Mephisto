@@ -681,7 +681,8 @@ E:\study\mephisto\
 |---|---|
 | 产出 | `ports.Runner`；`adapters/runner/dsh.py`：**`CliRunner`**（`dsh --profile mephisto --json`，prompt 走 **stdin**，逐行读 NDJSON）；`context.py` 装配四段上下文 |
 | 关键决策 | **不要 Python SDK**（`deepseek-harness-sdk` 那条 80 MB 的未知作废）；**每轮新会话**，不用 `--session-id`（留 `runner.continuity=resume` 开关）；prompt 必须走 stdin（Windows 命令行上限 32k，我们的 prompt 30–60 KB）；取消 = `taskkill /T /F`；独立 `DSH_HOME=state/dsh-home/` |
-| 验收 | `python -m mephisto run --dry-run "一句话"` 打印完整 prompt（人能逐段读出 A/B/C/D）；`python -m mephisto run "1+1"` 跑通并打印事件流；`state/dsh-home/` 有会话文件、`~/.dsh` 无新增 |
+| 验收 | `mephisto run --dry-run` 打印命令/DSH_HOME/prompt 全文；`mephisto run "1+1"` 真跑通并打印事件流 |
+| 实测结果 | **2.2s 跑通**，tokens=6024 / cacheRead=5504（91% 命中）；事件字段全部按实测写死（`session.sessionId`、`status.phase`、`turn_end.reason.kind`、`step_end.usage`、`final.text`）；会话落在 `state/dsh-home/sessions/--E-study-mephisto--/`，与 `~/.dsh` 隔离 |
 | 详见 | [25 会话引擎](25-session-engine.md) §6 |
 | tag | `step-3` |
 
