@@ -188,7 +188,22 @@ App 连接设置改成 `https://mephisto.xcfx.com`。
 2. **db reverse --remove 无法模拟断网**：HTTP 连接被复用，撤掉转发后请求照样成功。
    改用「停掉服务端进程」制造失败，可控且真实。
 
-## 5. 每轮测试的收尾（我做）
+## 5. T3 / T4 实测（2026-10-26）
+
+| 场景 | 结果 | 数据 |
+|---|---|---|
+| **T3 隧道 + 校园 Wi-Fi** | ⚠️ 不可用 | 冷启动 26.9s 才出列表；再测一次 133s 失败（SocketTimeoutException）。同一 Wi-Fi 下 ping 到 Cloudflare 通（353ms）但 443 超时——校园网到 Cloudflare 被限/不通 |
+| **T4 隧道 + 移动数据** | ✅ 可用 | **冷启动 5.8s**；发送 mobile-data-test 落库 1 条、job 正常 |
+
+结论：**校园 Wi-Fi 不适合走隧道**，用移动数据或换网络。App 侧的失败提示与"重试"按钮工作正常（超时后显示 失败：SocketTimeoutException）。
+
+### 试过但没用的做法（别重复）
+
+强制 java.net.preferIPv4Stack=true——无改善（问题在网络侧，不是 IPv6 优先），
+且在 IPv6-only/NAT64 网络下会直接断网。已移除，只在 MephistoApp 里留注释说明原因。
+真正有用的是：**连接超时 8s（快速失败）+ 读超时 20s + 重试一次 + 明确失败横幅**。
+
+## 6. 每轮测试的收尾（我做）
 
 1. 收集证据：`adb logcat` 相关行、截图、服务端 `event_log` 与 `job` 表
 2. 更新 `docs/STATE.md` 的进度与已知问题
