@@ -235,10 +235,12 @@ class ChatService:
             self._emit("job", payload, session_id)
 
         result = self.runner.run(Task(prompt=prompt, session_id=session_id), on_event=forward)
+        # 主动打断 ≠ 失败：客户端要能区分"它出错了"和"我按了打断"
+        final_state = "cancelled" if result.error == "cancelled" else ("done" if result.ok else "failed")
         self._emit(
             "job",
             {
-                "state": "done" if result.ok else "failed",
+                "state": final_state,
                 "error": result.error,
                 "duration_ms": result.duration_ms,
                 "usage": dict(result.usage),
