@@ -5,6 +5,16 @@
 
 ---
 
+## 0. 先读哪几份
+
+| 你要做什么 | 读 |
+|---|---|
+| 找代码在哪 | [INDEX.md](INDEX.md)（模块/函数/契约索引） |
+| 接手并开工 | [AGENT-BRIEF.md](AGENT-BRIEF.md)（任务书：铁律/命令/坑/下一步） |
+| 设计客户端 UI | [CLIENT-CONTRACT.md](CLIENT-CONTRACT.md) |
+| 真机联调 | [TEST-PLAN.md](TEST-PLAN.md) |
+| 了解为什么这么设计 | `00–90-*.md` 专题文档 |
+
 ## 1. 现在在哪
 
 | 步 | 内容 | 状态 | tag |
@@ -13,14 +23,15 @@
 | S1 | 领域模型 | ✅ | `step-1` |
 | S2 | 存储与迁移（13 表） | ✅ | `step-2` |
 | S3 | 运行器（DSH 子进程） | ✅ | `step-3` |
-| S4 | HTTP API + SSE（16 端点，契约冻结） | ✅ | `step-4` |
+| S4 | HTTP API + SSE（17 端点，契约冻结） | ✅ | `step-4` |
 | S5 | 队列与守护进程 | ✅ | `step-5` |
-| S6 | 提醒内核 + MCP 工具 | ✅ | `step-6` | |
+| S6 | 提醒内核 + MCP 工具 | ✅ | `step-6` |
 | S7 | 安卓工具链 + 空壳 APK（**在 Mephisto-Android 仓库**） | ✅ | `step-7`（Android 仓库） |
 | S8 | 安卓只读：会话列表 + 历史消息（Android 仓库） | ✅ | `step-8`（Android 仓库） |
-| S9 | 安卓发送：排队 + 三级撤销 + SSE（Android 仓库） | ✅ | `step-9`（Android 仓库） |
-| S10 | 安卓常驻通知 + 精确闹钟（Android 仓库） | ✅ | `step-10`（Android 仓库） | |
-| S11–S13 | 记忆 / 第二信道 / 聊天摘要 | | |
+| S9 | 安卓发送：排队 + 取消/打断 + SSE（Android 仓库） | ✅ | `step-9`（Android 仓库） |
+| S10 | 安卓常驻通知 + 精确闹钟（Android 仓库） | ✅ | `step-10`（Android 仓库） |
+| — | 真机联调修正（自动加载/失败重发/界面重做/ChatStore 缓存） | ✅ 未打标签 | Android `bf5b489` |
+| S11–S13 | 记忆 / 第二信道 / 聊天摘要 | ⏳ 下一步候选 | |
 | S14 | 邮件 | 搁置 | |
 
 分支 `main`，远端 `origin = git@github-mephisto:miaki03/Mephisto.git`（账号级 SSH key `~/.ssh/id_ed25519_mephisto`，无 passphrase，用户已确认）。
