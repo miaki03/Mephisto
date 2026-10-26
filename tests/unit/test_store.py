@@ -45,15 +45,15 @@ class StoreTestBase(unittest.TestCase):
 
 
 class MigrationTest(StoreTestBase):
-    def test_migrate_creates_version_1(self) -> None:
+    def test_migrate_creates_latest_version(self) -> None:
         before, after = self.db.migrate()
-        self.assertEqual((before, after), (0, 1))
-        self.assertEqual(self.db.current_version(), 1)
+        self.assertEqual((before, after), (0, 2))
+        self.assertEqual(self.db.current_version(), 2)
 
     def test_migrate_is_idempotent(self) -> None:
         self.db.migrate()
         before, after = self.db.migrate()
-        self.assertEqual((before, after), (1, 1), "第二次迁移不能改动版本号")
+        self.assertEqual((before, after), (2, 2), "第二次迁移不能改动版本号")
 
     def test_wal_mode(self) -> None:
         self.db.migrate()
@@ -285,7 +285,7 @@ class CliDbTest(unittest.TestCase):
         migrate_out = io.StringIO()
         with contextlib.redirect_stdout(migrate_out):
             self.assertEqual(self.main(["--config", str(self.config), "db", "migrate"]), 0)
-        self.assertIn("v0 → v1", migrate_out.getvalue())
+        self.assertIn("v0 → v2", migrate_out.getvalue())
 
         check_out = io.StringIO()
         with contextlib.redirect_stdout(check_out):

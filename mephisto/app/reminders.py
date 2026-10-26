@@ -41,6 +41,7 @@ class ReminderService:
         origin_session: str | None = None,
         priority: str = "normal",
         channel: tuple[str, ...] = ("alarm",),
+        rrule: str | None = None,
     ) -> Reminder:
         now = self.clock.now()
         zone = tz or self.tz
@@ -58,6 +59,7 @@ class ReminderService:
             created_at=now,
             origin_session=origin_session,
             priority=priority,
+            rrule=rrule,
             channels=channel,
         )
         self.reminders.insert(reminder)
@@ -134,6 +136,7 @@ class ReminderService:
             due_utc=reminder.due_at_utc,
             created_at=self.clock.now(),
             session_id=reminder.origin_session,
+            rrule=reminder.rrule,
             origin=reminder.origin_for(reminder.due_at_utc),
         )
         if not self.notices.insert(notice):

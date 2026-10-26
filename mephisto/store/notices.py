@@ -14,7 +14,7 @@ from .db import Database, from_ms, to_ms
 
 _COLUMNS = (
     "id, kind, session_id, title, body, due_utc, state, acked_at, snooze_until,"
-    " origin, client_ref, created_at"
+    " origin, client_ref, created_at, rrule"
 )
 
 
@@ -30,6 +30,7 @@ def _to_notice(row: sqlite3.Row) -> Notice:
         session_id=row["session_id"],
         origin=row["origin"],
         client_ref=row["client_ref"],
+        rrule=row["rrule"],
         acked_at=from_ms(row["acked_at"]) if row["acked_at"] is not None else None,
         snooze_until=from_ms(row["snooze_until"]) if row["snooze_until"] is not None else None,
     )
@@ -42,7 +43,7 @@ class NoticeRepo:
     def insert(self, notice: Notice) -> bool:
         """返回是否新增。`origin` 重复时返回 False（幂等，不抛异常）。"""
         cursor = self._db.execute(
-            f"INSERT OR IGNORE INTO notice ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"INSERT OR IGNORE INTO notice ({_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 notice.id,
                 notice.kind,
@@ -56,6 +57,7 @@ class NoticeRepo:
                 notice.origin,
                 notice.client_ref,
                 to_ms(notice.created_at),
+                notice.rrule,
             ),
         )
         return cursor.rowcount > 0

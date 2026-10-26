@@ -39,6 +39,7 @@ class Notice:
     session_id: str | None = None
     origin: str | None = None
     client_ref: str | None = None
+    rrule: str | None = None
     acked_at: datetime | None = None
     snooze_until: datetime | None = None
 
@@ -107,7 +108,7 @@ class Notice:
             "created_at": codec.to_iso(self.created_at),
             "state": self.state,
         }
-        for key in ("body", "session_id", "origin", "client_ref"):
+        for key in ("body", "session_id", "origin", "client_ref", "rrule"):
             value = getattr(self, key)
             if value is not None:
                 data[key] = value
@@ -123,7 +124,7 @@ class Notice:
         codec.expect_keys(
             data,
             ("id", "kind", "title", "due_utc", "created_at", "body", "state",
-             "session_id", "origin", "client_ref", "acked_at", "snooze_until", "meta"),
+             "session_id", "origin", "client_ref", "acked_at", "snooze_until", "meta", "rrule"),
             where,
         )
         return cls(
@@ -137,6 +138,7 @@ class Notice:
             session_id=data.get("session_id"),
             origin=data.get("origin"),
             client_ref=data.get("client_ref"),
+            rrule=data.get("rrule"),
             acked_at=(
                 codec.as_utc(data["acked_at"], f"{where}.acked_at") if data.get("acked_at") is not None else None
             ),
